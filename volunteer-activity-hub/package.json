@@ -1,0 +1,25 @@
+{
+  "name": "volunteer-activity-hub",
+  "version": "1.0.0",
+  "description": "เว็บไซต์รวบรวมกิจกรรมจิตอาสา — Cloudflare Workers + MySQL/TiDB",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "tail": "wrangler tail",
+    "secret": "wrangler secret",
+    "kv": "wrangler kv",
+    "d1": "wrangler d1",
+    "hyperdrive": "wrangler hyperdrive"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "mysql2": "^3.6.5",
+    "nodemailer": "^9.0.3"
+  },
+  "devDependencies": {
+    "wrangler": "^4.110.0"
+  }
+}
