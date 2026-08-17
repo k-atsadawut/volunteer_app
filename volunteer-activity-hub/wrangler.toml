@@ -1,0 +1,40 @@
+name = "volunteer-activity-hub"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+compatibility_flags = ["nodejs_compat"]
+
+# KV namespace for sessions
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "db067b7282214de8bc27e19ad2362d62"
+preview_id = "ac4102fd307c40b590452d46e77ee6c6"
+
+# Hyperdrive configuration
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "21d877055d1b4f6294674d4651ba0f9f"
+
+# R2 bucket for verification photos (upload storage for photo verifications)
+[[r2_buckets]]
+binding = "PHOTOS_BUCKET"
+bucket_name = "volunteer-activity-photos"
+
+# Cron triggers for reminder scheduler — run once daily (activities are date-based, not slot-based)
+[triggers]
+crons = ["0 1 * * *"]  # Run daily at 01:00 UTC (08:00 ICT)
+
+# Static assets for frontend
+[assets]
+directory = "./frontend"
+binding = "ASSETS"
+
+# Variables (non-sensitive)
+[vars]
+# FR-19: ล็อกบัญชี 10 ครั้ง / 6 ชั่วโมง (ตาม SRS v3.0)
+MAX_LOGIN_ATTEMPTS = "10"
+LOGIN_LOCK_MINUTES = "360"
+OPEN_TIME = "08:00"
+CLOSE_TIME = "20:00"
+REMINDER_MINUTES = "30"
+SESSION_LIFETIME = "21600000"
