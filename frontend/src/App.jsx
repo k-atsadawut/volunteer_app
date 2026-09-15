@@ -1,0 +1,445 @@
+import { useState, useEffect, useCallback } from 'react';
+
+const CATEGORY_LABELS = {
+  environment: 'สิ่งแวดล้อม',
+  education: 'การศึกษา',
+  health: 'สุขภาพ',
+  community: 'ชุมชน',
+  disaster_relief: 'บรรเทาสาธารณภัย',
+  animal_welfare: 'สวัสดิภาพสัตว์',
+  other: 'อื่นๆ',
+};
+
+const STATUS_BADGE = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  approved: 'bg-blue-100 text-blue-800',
+  rejected: 'bg-red-100 text-red-800',
+  cancelled: 'bg-gray-100 text-gray-600',
+  attended: 'bg-green-100 text-green-800',
+  no_show: 'bg-red-100 text-red-800',
+};
+
+const STATUS_LABEL = {
+  pending: 'รอการอนุมัติ',
+  approved: 'อนุมัติแล้ว',
+  rejected: 'ถูกปฏิเสธ',
+  cancelled: 'ยกเลิกแล้ว',
+  attended: 'เข้าร่วมสำเร็จ',
+  no_show: 'ไม่มาเข้าร่วม',
+};
+
+function Badge({ status }) {
+  return (
+    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_BADGE[status] || 'bg-gray-100 text-gray-600'}`}>
+      {STATUS_LABEL[status] || status}
+    </span>
+  );
+}
+
+function Toast({ message, type, onClose }) {
+  if (!message) return null;
+  const color = type === 'error' ? 'bg-red-600' : 'bg-green-600';
+  useEffect(() => {
+    const t = setTimeout(onClose, 4000);
+    return () => clearTimeout(t);
+  }, [message, onClose]);
+  return (
+    <div className={`fixed bottom-6 right-6 z-50 ${color} text-white px-5 py-3 rounded-xl shadow-lg text-sm`}>
+      {message}
+    </div>
+  );
+}
+
+function ActivityCard({ activity, onOpen }) {
+  const full = activity.MaxParticipants && activity.registered_count >= activity.MaxParticipants;
+  return (
+    <div onClick={() => onOpen(activity)} className="card-hover bg-white rounded-2xl border border-gray-200 overflow-hidden cursor-pointer transition">
+      <div className="h-32 bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-4xl">
+        🤝
+      </div>
+      <div className="p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary-50 text-primary-700">
+            {CATEGORY_LABELS[activity.Category] || activity.Category}
+          </span>
+          {full && <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600">เต็มแล้ว</span>}
+        </div>
+        <h3 className="font-semibold text-gray-900 line-clamp-2">{activity.Title}</h3>
+        <p className="text-sm text-gray-500 mt-1">{activity.StartDate} — {activity.EndDate}</p>
+        <p className="text-sm text-gray-500">{activity.Location || 'ไม่ระบุสถานที่'}</p>
+        <div className="flex items-center justify-between mt-3 text-sm">
+          <span className="text-gray-600">{activity.registered_count || 0}{activity.MaxParticipants ? `/${activity.MaxParticipants}` : ''} คน</span>
+          <span className="font-medium text-primary-700">{activity.HoursAwarded} ชม.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityDetailModal({ activity, onClose, onRegistered, onQueued }) {
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  if (!activity) return null;
+
+  const full = activity.MaxParticipants && activity.registered_count >= activity.MaxParticipants;
+
+  const register = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await apiFetch('/api/registrations', { method: 'POST', body: { activityId: activity.ActivityID, note } });
+      onRegistered();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const joinQueue = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await apiFetch('/api/queues', { method: 'POST', body: { activityId: activity.ActivityID } });
+      onQueued();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div className="h-28 bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-between px-6">
+          <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-white/90 text-primary-700">
+            {CATEGORY_LABELS[activity.Category] || activity.Category}
+          </span>
+          <button onClick={onClose} className="text-white/90 hover:text-white" aria-label="ปิด">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-6">
+          <h2 className="text-xl font-bold text-gray-900">{activity.Title}</h2>
+          <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{activity.Description || 'ไม่มีรายละเอียดเพิ่มเติม'}</p>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div><span className="text-gray-500">วันที่:</span> {activity.StartDate} — {activity.EndDate}</div>
+            <div><span className="text-gray-500">เวลา:</span> {activity.StartTime || '-'} - {activity.EndTime || '-'}</div>
+            <div><span className="text-gray-500">สถานที่:</span> {activity.Location || '-'}</div>
+            <div><span className="text-gray-500">ชั่วโมงที่ได้รับ:</span> {activity.HoursAwarded} ชม.</div>
+            <div><span className="text-gray-500">ผู้จัด:</span> {activity.OrganizerName || '-'}</div>
+            <div><span className="text-gray-500">จำนวน:</span> {activity.registered_count || 0}{activity.MaxParticipants ? `/${activity.MaxParticipants}` : ' (ไม่จำกัด)'}</div>
+          </div>
+
+          {error && <div className="mt-4 text-sm text-red-600 bg-red-50 rounded-lg p-3">{error}</div>}
+
+          <div className="mt-3">
+            <label className="text-sm text-gray-600">ข้อความถึงผู้จัด (ไม่บังคับ)</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+              className="mt-1 w-full rounded-xl border border-gray-300 p-3 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500" />
+          </div>
+
+          <div className="mt-5 flex gap-3">
+            {full ? (
+              <button onClick={joinQueue} disabled={loading}
+                className="flex-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-medium py-3 transition disabled:opacity-60">
+                {loading ? 'กำลังดำเนินการ...' : 'เข้าคิวรอ (กิจกรรมเต็มแล้ว)'}
+              </button>
+            ) : (
+              <button onClick={register} disabled={loading}
+                className="flex-1 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 transition disabled:opacity-60">
+                {loading ? 'กำลังสมัคร...' : 'สมัครเข้าร่วมกิจกรรม'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VerifyPhotoModal({ registration, onClose, onDone }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  if (!registration) return null;
+
+  const handleFile = (f) => {
+    setFile(f);
+    setError('');
+    setResult(null);
+    const reader = new FileReader();
+    reader.onload = () => setPreview(reader.result);
+    reader.readAsDataURL(f);
+  };
+
+  const submit = async () => {
+    if (!file) return;
+    setLoading(true);
+    setError('');
+    try {
+      let gps = {};
+      let taken = null;
+      try {
+        const exifr = await import('exifr');
+        gps = await exifr.gps(file) || {};
+        const meta = await exifr.parse(file, ['DateTimeOriginal']);
+        taken = meta?.DateTimeOriginal ? new Date(meta.DateTimeOriginal).toISOString() : null;
+      } catch (exifErr) {
+        console.warn('อ่าน EXIF ไม่สำเร็จ:', exifErr);
+      }
+
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const res = await apiFetch('/api/verifications', {
+        method: 'POST',
+        body: {
+          registrationId: registration.RegistrationID,
+          photoBase64: base64,
+          exifLat: gps.latitude ?? null,
+          exifLng: gps.longitude ?? null,
+          exifTakenAt: taken,
+        },
+      });
+      setResult(res);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full border border-slate-200 p-6">
+        <div className="flex items-start justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">อัปโหลดรูปยืนยันการเข้าร่วม</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="ปิด">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <p className="text-sm text-gray-600 mt-2">
+          ถ่ายรูปที่สถานที่จัดกิจกรรม ระบบจะอ่านพิกัด GPS จากรูปเพื่อยืนยันอัตโนมัติ
+          (ต้องเปิดสิทธิ์บันทึกตำแหน่งในกล้อง/มือถือไว้ก่อนถ่าย)
+        </p>
+
+        {!result && (
+          <>
+            <input type="file" accept="image/*" capture="environment"
+              onChange={e => e.target.files[0] && handleFile(e.target.files[0])}
+              className="mt-4 w-full text-sm" />
+            {preview && <img src={preview} alt="ตัวอย่างรูปที่เลือก" className="mt-3 rounded-xl max-h-56 w-full object-cover" />}
+            {error && <div className="mt-3 text-sm text-red-600 bg-red-50 rounded-lg p-3">{error}</div>}
+            <button onClick={submit} disabled={!file || loading}
+              className="mt-4 w-full rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 transition disabled:opacity-50">
+              {loading ? 'กำลังอัปโหลด...' : 'ส่งรูปยืนยัน'}
+            </button>
+          </>
+        )}
+
+        {result && (
+          <div className={`mt-4 p-4 rounded-xl text-sm ${result.status === 'verified' ? 'bg-green-50 text-green-800' : 'bg-yellow-50 text-yellow-800'}`}>
+            {result.message}
+            <button onClick={onDone} className="mt-3 block w-full rounded-xl bg-white border border-gray-300 py-2 font-medium text-gray-700 hover:bg-gray-50">
+              ปิด
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// API helper
+async function apiFetch(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  const res = await fetch(path, { ...options, headers });
+  let data;
+  try { data = await res.json(); } catch(e) { data = null; }
+  if (!res.ok) throw new Error(data?.error || 'Request failed');
+  return data;
+}
+
+// Auth helper
+async function requireLogin(allowedRoles = []) {
+  const res = await fetch('/api/auth/session');
+  if (!res.ok) {
+    window.location.href = '/login.html';
+    return null;
+  }
+  const data = await res.json();
+  if (allowedRoles.length > 0 && !allowedRoles.includes(data.user.role)) {
+    window.location.href = '/login.html';
+    return null;
+  }
+  return data.user;
+}
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [tab, setTab] = useState('browse');
+  const [activities, setActivities] = useState([]);
+  const [myRegs, setMyRegs] = useState([]);
+  const [category, setCategory] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedActivity, setSelectedActivity] = useState(null);
+  const [verifyReg, setVerifyReg] = useState(null);
+  const [toast, setToast] = useState({ message: '', type: 'success' });
+  const [loading, setLoading] = useState(true);
+
+  const notify = (message, type = 'success') => setToast({ message, type });
+
+  const loadActivities = useCallback(async () => {
+    const params = new URLSearchParams({ status: 'open' });
+    if (category) params.set('category', category);
+    if (search) params.set('q', search);
+    const data = await apiFetch(`/api/activities?${params.toString()}`);
+    setActivities(data.data || data);
+  }, [category, search]);
+
+  const loadMyRegs = useCallback(async () => {
+    const data = await apiFetch('/api/registrations');
+    setMyRegs(data);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const u = await requireLogin(['student', 'teacher', 'organizer']);
+      if (!u) return;
+      setUser(u);
+      await Promise.all([loadActivities(), loadMyRegs()]);
+      setLoading(false);
+    })();
+  }, []);
+
+  useEffect(() => { if (user) loadActivities(); }, [category, search]);
+
+  const cancelReg = async (id) => {
+    try {
+      await apiFetch(`/api/registrations/${id}/cancel`, { method: 'PATCH' });
+      notify('ยกเลิกการลงทะเบียนแล้ว');
+      loadMyRegs();
+    } catch (e) {
+      notify(e.message, 'error');
+    }
+  };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-gray-500">กำลังโหลด...</div>;
+  }
+
+  return (
+    <div className="bg-gray-50 min-h-screen">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🤝</span>
+            <h1 className="font-bold text-lg text-gray-900">เว็บรวมกิจกรรมจิตอาสา</h1>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <div className="text-sm font-medium text-gray-900">{user?.name}</div>
+              <div className="text-xs text-primary-700">สะสม {user?.totalHours ?? 0} ชั่วโมง</div>
+            </div>
+            <button onClick={() => window.location.href = '/api/auth/logout'} className="text-sm font-medium text-red-600 hover:text-red-700">ออกจากระบบ</button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        <div className="flex gap-2 mb-6 border-b border-gray-200">
+          <button onClick={() => setTab('browse')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${tab === 'browse' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            ค้นหากิจกรรม
+          </button>
+          <button onClick={() => setTab('mine')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition ${tab === 'mine' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            กิจกรรมของฉัน {myRegs.length > 0 && `(${myRegs.length})`}
+          </button>
+        </div>
+
+        {tab === 'browse' && (
+          <div>
+            <div className="flex flex-col sm:flex-row gap-3 mb-5">
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหากิจกรรม..."
+                className="flex-1 rounded-xl border border-gray-300 px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500" />
+              <select value={category} onChange={e => setCategory(e.target.value)}
+                className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <option value="">ทุกหมวดหมู่</option>
+                {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            {activities.length === 0 ? (
+              <p className="text-center text-gray-500 py-16">ยังไม่มีกิจกรรมที่เปิดรับสมัครในขณะนี้</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {activities.map(a => <ActivityCard key={a.ActivityID} activity={a} onOpen={setSelectedActivity} />)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'mine' && (
+          <div className="space-y-3">
+            {myRegs.length === 0 ? (
+              <p className="text-center text-gray-500 py-16">คุณยังไม่ได้ลงทะเบียนกิจกรรมใดๆ</p>
+            ) : myRegs.map(r => (
+              <div key={r.RegistrationID} className="bg-white rounded-2xl border border-gray-200 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-gray-900">{r.Title}</h3>
+                    <Badge status={r.Status} />
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">{r.StartDate} — {r.EndDate} · {r.Location || '-'} · {r.HoursAwarded} ชม.</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  {r.Status === 'approved' && (
+                    <button onClick={() => setVerifyReg(r)}
+                      className="rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-3 py-2 transition">
+                      อัปโหลดรูปยืนยัน
+                    </button>
+                  )}
+                  {['pending', 'approved'].includes(r.Status) && (
+                    <button onClick={() => cancelReg(r.RegistrationID)}
+                      className="rounded-lg border border-gray-300 text-gray-700 text-sm font-medium px-3 py-2 hover:bg-gray-50 transition">
+                      ยกเลิก
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      <ActivityDetailModal
+        activity={selectedActivity}
+        onClose={() => setSelectedActivity(null)}
+        onRegistered={() => { setSelectedActivity(null); notify('สมัครเข้าร่วมกิจกรรมสำเร็จ รอการอนุมัติ'); loadMyRegs(); loadActivities(); }}
+        onQueued={() => { setSelectedActivity(null); notify('เข้าคิวรอสำเร็จ ระบบจะแจ้งเตือนเมื่อมีที่ว่าง'); }}
+      />
+
+      <VerifyPhotoModal
+        registration={verifyReg}
+        onClose={() => setVerifyReg(null)}
+        onDone={() => { setVerifyReg(null); loadMyRegs(); }}
+      />
+
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
+    </div>
+  );
+}
