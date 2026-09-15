@@ -20,7 +20,7 @@ const app = new Hono();
 
 // Middleware
 app.use('*', cors({
-  origin: (origin) => {
+  origin: (origin, c) => {
     // Production: Restrict to specific domains via ALLOWED_ORIGINS secret
     // Format: comma-separated list, e.g., "https://example.com,https://www.example.com"
     if (c.env?.ALLOWED_ORIGINS) {

@@ -1,6 +1,7 @@
 {
   "name": "volunteer-activity-hub",
   "version": "1.0.0",
+  "type": "module",
   "description": "เว็บไซต์รวบรวมกิจกรรมจิตอาสา — Cloudflare Workers + MySQL/TiDB",
   "main": "src/index.js",
   "scripts": {

@@ -56,7 +56,7 @@ adminReports.get('/activities', requireAdmin, async (c) => {
     LEFT JOIN registrations r ON a.ActivityID = r.ActivityID
   `;
 
-  const countQuery = `
+  let countQuery = `
     SELECT COUNT(DISTINCT a.ActivityID) as total FROM activities a
     LEFT JOIN registrations r ON a.ActivityID = r.ActivityID
   `;

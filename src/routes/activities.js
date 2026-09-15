@@ -21,7 +21,7 @@ activities.get('/', requireAuth, async (c) => {
     FROM activities a
   `;
 
-  const countQuery = `
+  let countQuery = `
     SELECT COUNT(*) AS total FROM activities a
   `;
 

@@ -144,8 +144,8 @@ verifications.get('/', requireAuth, async (c) => {
   return c.json(rows);
 });
 
-// GET /api/verifications/:id/photo-url — Generate signed URL for photo access (with auth check)
-verifications.get('/:id/photo-url', requireAuth, async (c) => {
+// GET /api/verifications/:id/photo — Serve photo directly with authorization check
+verifications.get('/:id/photo', requireAuth, async (c) => {
   const session = c.get('session');
   const id = c.req.param('id');
 
@@ -171,23 +171,25 @@ verifications.get('/:id/photo-url', requireAuth, async (c) => {
     return c.json({ error: 'ไม่มีสิทธิ์เข้าถึงรูปภาพนี้' }, 403);
   }
 
-  // Generate signed URL (valid for 1 hour)
+  // Get photo from R2
   if (!c.env.PHOTOS_BUCKET) {
     return c.json({ error: 'ระบบยังไม่ได้ตั้งค่าที่เก็บรูปภาพ' }, 500);
   }
 
   try {
-    const signedUrl = await c.env.PHOTOS_BUCKET.signUrl(verification.PhotoUrl, {
-      expiresIn: 3600, // 1 hour
-    });
-    return c.json({ url: signedUrl });
-  } catch (error) {
-    console.error('Failed to generate signed URL:', error);
-    // Fallback: return direct URL if R2 is public bucket (for backward compatibility)
-    if (c.env.R2_PUBLIC_URL) {
-      return c.json({ url: `${c.env.R2_PUBLIC_URL}/${verification.PhotoUrl}` });
+    const object = await c.env.PHOTOS_BUCKET.get(verification.PhotoUrl);
+    if (!object) {
+      return c.json({ error: 'ไม่พบไฟล์รูปภาพ' }, 404);
     }
-    return c.json({ error: 'ไม่สามารถสร้างลิงก์เข้าถึงรูปภาพได้' }, 500);
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('etag', object.httpEtag);
+
+    return new Response(object.body, { headers });
+  } catch (error) {
+    console.error('Failed to get photo from R2:', error);
+    return c.json({ error: 'ไม่สามารถดึงรูปภาพได้' }, 500);
   }
 });
 

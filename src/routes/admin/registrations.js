@@ -19,7 +19,7 @@ adminRegistrations.get('/', requireAdmin, async (c) => {
     JOIN activities a ON r.ActivityID = a.ActivityID
   `;
 
-  const countQuery = `
+  let countQuery = `
     SELECT COUNT(*) AS total FROM registrations r
     JOIN users u ON r.UserID = u.UserID
     JOIN activities a ON r.ActivityID = a.ActivityID

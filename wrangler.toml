@@ -26,7 +26,7 @@ crons = ["0 1 * * *"]  # Run daily at 01:00 UTC (08:00 ICT)
 
 # Static assets for frontend
 [assets]
-directory = "./frontend"
+directory = "./frontend/dist"
 binding = "ASSETS"
 
 # Variables (non-sensitive)
