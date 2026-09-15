@@ -105,34 +105,70 @@ verifications.get('/pending', requireAuth, async (c) => {
     return c.json({ error: 'ไม่มีสิทธิ์เข้าถึง' }, 403);
   }
 
-  const rows = await executeQuery(`
-    SELECT v.*, r.UserID, r.ActivityID, a.Title, u.Name AS UserName
+  let query = `
+    SELECT v.*, r.UserID, r.ActivityID, a.Title, a.OrganizerID, u.Name AS UserName
     FROM photo_verifications v
     JOIN registrations r ON v.RegistrationID = r.RegistrationID
     JOIN activities a ON r.ActivityID = a.ActivityID
     JOIN users u ON r.UserID = u.UserID
     WHERE v.Status = 'pending'
-    ORDER BY v.created_at ASC
-  `, [], c.env);
+  `;
+
+  const params = [];
+  
+  // Organizers can only see verifications for their own activities
+  if (session.user.role === 'organizer') {
+    query += ' AND a.OrganizerID = ?';
+    params.push(session.user.id);
+  }
+
+  query += ' ORDER BY v.created_at ASC';
+
+  const rows = await executeQuery(query, params, c.env);
+  return c.json(rows);
+});
+
+// GET /api/verifications — ดูรูปยืนยันของตัวเอง
+verifications.get('/', requireAuth, async (c) => {
+  const session = c.get('session');
+
+  const rows = await executeQuery(`
+    SELECT v.*, a.Title AS ActivityTitle, a.StartDate, a.EndDate
+    FROM photo_verifications v
+    JOIN registrations r ON v.RegistrationID = r.RegistrationID
+    JOIN activities a ON r.ActivityID = a.ActivityID
+    WHERE r.UserID = ?
+    ORDER BY v.created_at DESC
+  `, [session.user.id], c.env);
 
   return c.json(rows);
 });
 
 // PATCH /api/verifications/:id/review — เจ้าหน้าที่ตรวจสอบด้วยตนเอง (approve/reject)
-verifications.patch('/:id/review', requireAdmin, async (c) => {
+verifications.patch('/:id/review', requireAuth, async (c) => {
   const session = c.get('session');
   const id = c.req.param('id');
   const { approve, reason } = await c.req.json();
 
+  if (!['admin', 'organizer'].includes(session.user.role)) {
+    return c.json({ error: 'ไม่มีสิทธิ์ตรวจสอบรูปยืนยัน' }, 403);
+  }
+
   const rows = await executeQuery(
-    `SELECT v.*, r.UserID, r.ActivityID
+    `SELECT v.*, r.UserID, r.ActivityID, a.OrganizerID
      FROM photo_verifications v JOIN registrations r ON v.RegistrationID = r.RegistrationID
+     JOIN activities a ON r.ActivityID = a.ActivityID
      WHERE v.VerificationID = ? LIMIT 1`,
     [id],
     c.env
   );
   const verification = rows[0];
   if (!verification) return c.json({ error: 'ไม่พบรายการนี้' }, 404);
+
+  // Organizers can only review verifications for their own activities
+  if (session.user.role === 'organizer' && verification.OrganizerID !== session.user.id) {
+    return c.json({ error: 'ไม่มีสิทธิ์ตรวจสอบกิจกรรมนี้' }, 403);
+  }
 
   if (approve) {
     await executeQuery(
@@ -141,10 +177,24 @@ verifications.patch('/:id/review', requireAdmin, async (c) => {
       c.env
     );
     await grantHours(verification, id, c.env, session.user.id);
+    
+    // Notify user that verification was approved
+    await executeQuery(
+      'INSERT INTO notifications (UserID, Message, IsRead) VALUES (?, ?, 0)',
+      [verification.UserID, `รูปยืนยันการเข้าร่วมกิจกรรมได้รับการอนุมัติแล้ว บันทึกชั่วโมงจิตอาสาให้แล้ว`],
+      c.env
+    );
   } else {
     await executeQuery(
       "UPDATE photo_verifications SET Status = 'rejected', RejectReason = ?, ReviewedBy = ?, ReviewedAt = CURRENT_TIMESTAMP WHERE VerificationID = ?",
       [reason || null, session.user.id, id],
+      c.env
+    );
+    
+    // Notify user that verification was rejected
+    await executeQuery(
+      'INSERT INTO notifications (UserID, Message, IsRead) VALUES (?, ?, 0)',
+      [verification.UserID, `รูปยืนยันการเข้าร่วมกิจกรรมถูกปฏิเสธ${reason ? ': ' + reason : ''}`],
       c.env
     );
   }
