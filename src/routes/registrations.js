@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import { notifyAdminNewRegistration } from '../utils/mailer';
 import { checkAndNotifyQueue } from './queues';
-import { executeQuery } from '../config/db';
+import { executeQuery, executeTransaction } from '../config/db';
 
 const registrations = new Hono();
 
@@ -30,75 +30,85 @@ registrations.post('/', requireAuth, async (c) => {
     return c.json({ error: 'กรุณาระบุกิจกรรมที่ต้องการสมัคร' }, 400);
   }
 
-  const activityRows = await executeQuery(
-    'SELECT * FROM activities WHERE ActivityID = ? LIMIT 1',
-    [activityId],
-    c.env
-  );
-  const activity = activityRows[0];
+  try {
+    // Use transaction to prevent race condition when checking capacity
+    const results = await executeTransaction([
+      // 1. Get activity details
+      {
+        sql: 'SELECT * FROM activities WHERE ActivityID = ? LIMIT 1 FOR UPDATE',
+        params: [activityId]
+      },
+      // 2. Check duplicate registration
+      {
+        sql: `SELECT RegistrationID FROM registrations
+             WHERE UserID = ? AND ActivityID = ? AND Status IN ('pending','approved','attended') LIMIT 1`,
+        params: [session.user.id, activityId]
+      },
+      // 3. Check capacity if MaxParticipants is set
+      {
+        sql: `SELECT COUNT(*) AS cnt FROM registrations
+             WHERE ActivityID = ? AND Status IN ('pending','approved','attended')`,
+        params: [activityId]
+      }
+    ], c.env);
 
-  if (!activity) return c.json({ error: 'ไม่พบกิจกรรมนี้' }, 404);
-  if (activity.Status !== 'open') {
-    return c.json({ error: 'กิจกรรมนี้ไม่ได้เปิดรับสมัครในขณะนี้' }, 400);
-  }
+    const activity = results[0][0];
+    if (!activity) return c.json({ error: 'ไม่พบกิจกรรมนี้' }, 404);
+    if (activity.Status !== 'open') {
+      return c.json({ error: 'กิจกรรมนี้ไม่ได้เปิดรับสมัครในขณะนี้' }, 400);
+    }
 
-  // ตรวจว่าสมัครซ้ำหรือยัง
-  const already = await executeQuery(
-    `SELECT RegistrationID FROM registrations
-     WHERE UserID = ? AND ActivityID = ? AND Status IN ('pending','approved','attended') LIMIT 1`,
-    [session.user.id, activityId],
-    c.env
-  );
-  if (already.length > 0) {
-    return c.json({ error: 'คุณลงทะเบียนกิจกรรมนี้ไว้แล้ว' }, 400);
-  }
+    const already = results[1];
+    if (already.length > 0) {
+      return c.json({ error: 'คุณลงทะเบียนกิจกรรมนี้ไว้แล้ว' }, 400);
+    }
 
-  // ตรวจจำนวนที่นั่งเต็มหรือยัง
-  if (activity.MaxParticipants) {
-    const countRows = await executeQuery(
-      `SELECT COUNT(*) AS cnt FROM registrations
-       WHERE ActivityID = ? AND Status IN ('pending','approved','attended')`,
-      [activityId],
+    // Check capacity with locking
+    if (activity.MaxParticipants) {
+      const count = results[2][0].cnt;
+      if (count >= activity.MaxParticipants) {
+        return c.json({ error: 'กิจกรรมนี้มีผู้สมัครเต็มจำนวนแล้ว สามารถเข้าคิวรอได้ที่ /api/queues' }, 400);
+      }
+    }
+
+    // Insert registration
+    const insertResult = await executeQuery(
+      `INSERT INTO registrations (UserID, ActivityID, Status, Note) VALUES (?, ?, 'pending', ?)`,
+      [session.user.id, activityId, note || null],
       c.env
     );
-    if (countRows[0].cnt >= activity.MaxParticipants) {
-      return c.json({ error: 'กิจกรรมนี้มีผู้สมัครเต็มจำนวนแล้ว สามารถเข้าคิวรอได้ที่ /api/queues' }, 400);
-    }
-  }
 
-  const result = await executeQuery(
-    `INSERT INTO registrations (UserID, ActivityID, Status, Note) VALUES (?, ?, 'pending', ?)`,
-    [session.user.id, activityId, note || null],
-    c.env
-  );
+    const registrationId = insertResult.insertId;
 
-  const registrationId = result.insertId;
-
-  // แจ้ง admin/organizer ว่ามีผู้สมัครใหม่
-  const notifyTargets = await executeQuery(
-    `SELECT UserID, Email FROM users WHERE Role = 'admin' OR UserID = ?`,
-    [activity.OrganizerID || 0],
-    c.env
-  );
-
-  const user = await executeQuery('SELECT Name, Email FROM users WHERE UserID = ?', [session.user.id], c.env);
-
-  for (const target of notifyTargets) {
-    await executeQuery(
-      'INSERT INTO notifications (UserID, RegistrationID, Message) VALUES (?, ?, ?)',
-      [target.UserID, registrationId, `มีผู้สมัครเข้าร่วมกิจกรรม "${activity.Title}" รอการอนุมัติ`],
+    // แจ้ง admin/organizer ว่ามีผู้สมัครใหม่ (outside transaction for performance)
+    const notifyTargets = await executeQuery(
+      `SELECT UserID, Email FROM users WHERE Role = 'admin' OR UserID = ?`,
+      [activity.OrganizerID || 0],
       c.env
     );
-    if (target.Email) {
-      notifyAdminNewRegistration({
-        ActivityTitle: activity.Title,
-        UserName: user[0]?.Name,
-        UserEmail: user[0]?.Email,
-      }, target.Email, c.env).catch(err => console.error('Email error:', err));
-    }
-  }
 
-  return c.json({ success: true, registrationId });
+    const user = await executeQuery('SELECT Name, Email FROM users WHERE UserID = ?', [session.user.id], c.env);
+
+    for (const target of notifyTargets) {
+      await executeQuery(
+        'INSERT INTO notifications (UserID, RegistrationID, Message) VALUES (?, ?, ?)',
+        [target.UserID, registrationId, `มีผู้สมัครเข้าร่วมกิจกรรม "${activity.Title}" รอการอนุมัติ`],
+        c.env
+      );
+      if (target.Email) {
+        notifyAdminNewRegistration({
+          ActivityTitle: activity.Title,
+          UserName: user[0]?.Name,
+          UserEmail: user[0]?.Email,
+        }, target.Email, c.env).catch(err => console.error('Email error:', err));
+      }
+    }
+
+    return c.json({ success: true, registrationId });
+  } catch (error) {
+    console.error('Registration transaction error:', error);
+    return c.json({ error: 'เกิดข้อผิดพลาดในการลงทะเบียน กรุณาลองใหม่' }, 500);
+  }
 });
 
 // PATCH /api/registrations/:id/cancel — ยกเลิกการลงทะเบียน
