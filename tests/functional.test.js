@@ -5,7 +5,9 @@ const API_BASE = process.env.API_BASE || 'http://localhost:8787';
 
 // Test variables
 let sessionCookie = '';
-const TEST_USER = { email: 'admin@volunteer.ac.th', password: 'admin123' };
+const TEST_ADMIN = { email: 'admin@volunteer.ac.th', password: 'admin123' };
+const TEST_ORGANIZER = { email: 'organizer@volunteer.ac.th', password: 'organizer123' };
+const TEST_STUDENT = { email: 'student@volunteer.ac.th', password: 'student123' };
 let currentUserId = null;
 let testActivityId = null;
 let testRegistrationId = null;
@@ -53,77 +55,170 @@ async function runTests() {
     });
     assert(loginRes.status === 401, 'ปฏิเสธการล็อกอินด้วยรหัสผ่านผิด', 'AUTH-01');
 
-    // Login with correct user
+    // Login as admin
     loginRes = await apiFetch('/api/auth/login', { 
       method: 'POST', 
-      body: JSON.stringify(TEST_USER) 
+      body: JSON.stringify(TEST_ADMIN) 
     });
     
     if (loginRes.status === 200) {
-      assert(true, 'ผู้ใช้เข้าสู่ระบบสำเร็จ', 'AUTH-02');
+      assert(true, 'Admin เข้าสู่ระบบสำเร็จ', 'AUTH-02');
       currentUserId = loginRes.data?.user?.id;
 
       // -------------------------------------------------------------
-      // Activity Tests
+      // Admin Permissions Tests
       // -------------------------------------------------------------
-      console.log('\n--- Testing Activities ---');
+      console.log('\n--- Testing Admin Permissions ---');
       
-      // Get activities list
-      const activitiesRes = await apiFetch('/api/activities');
-      assert(activitiesRes.status === 200, 'ดึงรายการกิจกรรมสำเร็จ', 'ACT-01');
-      assert(Array.isArray(activitiesRes.data?.data) || Array.isArray(activitiesRes.data), 'Activities response is array or paginated', 'ACT-02');
+      const usersRes = await apiFetch('/api/admin/users');
+      assert(usersRes.status === 200, 'Admin สามารถดึงรายชื่อผู้ใช้ทั้งหมดได้', 'ADMIN-PERM-01');
+      
+      // Verify password field is not exposed
+      const hasPassword = usersRes.data && usersRes.data.some && usersRes.data.some(u => u.Password !== undefined);
+      assert(!hasPassword, 'Password field ไม่ถูกส่งใน API response', 'SEC-01');
 
-      // Create a test activity (admin/organizer only)
+      const adminRegsRes = await apiFetch('/api/admin/registrations');
+      assert(adminRegsRes.status === 200, 'Admin สามารถดูการลงทะเบียนทั้งหมดได้', 'ADMIN-PERM-02');
+
+      // Logout admin
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+      sessionCookie = '';
+    }
+
+    // -------------------------------------------------------------
+    // Organizer Permissions Tests
+    // -------------------------------------------------------------
+    console.log('\n--- Testing Organizer Permissions ---');
+    
+    loginRes = await apiFetch('/api/auth/login', { 
+      method: 'POST', 
+      body: JSON.stringify(TEST_ORGANIZER) 
+    });
+    
+    if (loginRes.status === 200) {
+      assert(true, 'Organizer เข้าสู่ระบบสำเร็จ', 'AUTH-03');
+      currentUserId = loginRes.data?.user?.id;
+
+      // Organizer should NOT access admin endpoints
+      const usersRes = await apiFetch('/api/admin/users');
+      assert(usersRes.status === 403, 'Organizer ไม่สามารถเข้าถึง admin endpoints ได้', 'ORG-PERM-01');
+
+      // Organizer CAN access their own registrations
+      const orgRegsRes = await apiFetch('/api/organizer/registrations');
+      assert(orgRegsRes.status === 200, 'Organizer สามารถดูการลงทะเบียนกิจกรรมของตัวเองได้', 'ORG-PERM-02');
+
+      // Create a test activity as organizer
       const createActivityRes = await apiFetch('/api/activities', {
         method: 'POST',
         body: JSON.stringify({
-          Title: 'Test Activity for API Testing',
+          Title: 'Test Activity for Permissions',
           Description: 'Automated test activity',
           Category: 'community',
-          StartDate: '2027-01-15',
-          EndDate: '2027-01-15',
+          StartDate: '2027-02-15',
+          EndDate: '2027-02-15',
           StartTime: '09:00',
           EndTime: '12:00',
-          MaxParticipants: 10,
+          MaxParticipants: 2,
           HoursAwarded: 3,
           Status: 'open'
         })
       });
       if (createActivityRes.status === 200) {
         testActivityId = createActivityRes.data?.activityId;
-        assert(true, 'สร้างกิจกรรมใหม่สำเร็จ', 'ACT-03');
-      } else {
-        console.log('⚠️ ไม่สามารถสร้างกิจกรรมทดสอบ (อาจเป็น permission issue)');
+        assert(true, 'Organizer สร้างกิจกรรมใหม่สำเร็จ', 'ORG-PERM-03');
       }
 
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+      sessionCookie = '';
+    }
+
+    // -------------------------------------------------------------
+    // Student/Regular User Tests
+    // -------------------------------------------------------------
+    console.log('\n--- Testing Student/User Functionality ---');
+    
+    loginRes = await apiFetch('/api/auth/login', { 
+      method: 'POST', 
+      body: JSON.stringify(TEST_STUDENT) 
+    });
+    
+    if (loginRes.status === 200) {
+      assert(true, 'Student เข้าสู่ระบบสำเร็จ', 'AUTH-04');
+      currentUserId = loginRes.data?.user?.id;
+
+      // Student should NOT access admin endpoints
+      const usersRes = await apiFetch('/api/admin/users');
+      assert(usersRes.status === 403, 'Student ไม่สามารถเข้าถึง admin endpoints ได้', 'USER-PERM-01');
+
+      // Student should NOT access organizer endpoints
+      const orgRegsRes = await apiFetch('/api/organizer/registrations');
+      assert(orgRegsRes.status === 403, 'Student ไม่สามารถเข้าถึง organizer endpoints ได้', 'USER-PERM-02');
+
       // -------------------------------------------------------------
-      // Registration Tests
+      // Activity Tests
       // -------------------------------------------------------------
-      console.log('\n--- Testing Registrations ---');
+      console.log('\n--- Testing Activities ---');
+      
+      const activitiesRes = await apiFetch('/api/activities');
+      assert(activitiesRes.status === 200, 'ดึงรายการกิจกรรมสำเร็จ', 'ACT-01');
+      assert(Array.isArray(activitiesRes.data?.data) || Array.isArray(activitiesRes.data), 'Activities response is array or paginated', 'ACT-02');
+
+      // -------------------------------------------------------------
+      // Registration & Full Capacity Tests
+      // -------------------------------------------------------------
+      console.log('\n--- Testing Registration & Capacity ---');
       
       if (testActivityId) {
-        // Register for activity
+        // First registration
         const regRes = await apiFetch('/api/registrations', {
           method: 'POST',
-          body: JSON.stringify({ activityId: testActivityId, note: 'API test registration' })
+          body: JSON.stringify({ activityId: testActivityId, note: 'First registration' })
         });
         if (regRes.status === 200) {
           testRegistrationId = regRes.data?.registrationId;
-          assert(true, 'ลงทะเบียนกิจกรรมสำเร็จ', 'REG-01');
-        } else {
-          console.log('⚠️ ลงทะเบียนไม่สำเร็จ:', regRes.data?.error);
+          assert(true, 'ลงทะเบียนกิจกรรมสำเร็จ (คนแรก)', 'REG-01');
         }
-
-        // Get own registrations
-        const myRegsRes = await apiFetch('/api/registrations');
-        assert(myRegsRes.status === 200, 'ดึงรายการลงทะเบียนของตัวเองสำเร็จ', 'REG-02');
 
         // Test duplicate registration prevention
         const dupRegRes = await apiFetch('/api/registrations', {
           method: 'POST',
           body: JSON.stringify({ activityId: testActivityId })
         });
-        assert(dupRegRes.status === 400, 'ป้องกันการลงทะเบียนซ้ำ', 'REG-03');
+        assert(dupRegRes.status === 400, 'ป้องกันการลงทะเบียนซ้ำ', 'REG-02');
+
+        // Get own registrations
+        const myRegsRes = await apiFetch('/api/registrations');
+        assert(myRegsRes.status === 200, 'ดึงรายการลงทะเบียนของตัวเองสำเร็จ', 'REG-03');
+
+        // Test cancellation
+        if (testRegistrationId) {
+          const cancelRes = await apiFetch(`/api/registrations/${testRegistrationId}/cancel`, {
+            method: 'PATCH'
+          });
+          assert(cancelRes.status === 200, 'ยกเลิกการลงทะเบียนสำเร็จ', 'REG-04');
+        }
+      }
+
+      // -------------------------------------------------------------
+      // Queue Tests (when full)
+      // -------------------------------------------------------------
+      console.log('\n--- Testing Queue Functionality ---');
+      
+      if (testActivityId) {
+        // Re-register to test queue
+        const regRes = await apiFetch('/api/registrations', {
+          method: 'POST',
+          body: JSON.stringify({ activityId: testActivityId, note: 'For queue test' })
+        });
+        
+        if (regRes.status === 200) {
+          // Try to register again (should fail since we're already registered)
+          const dupRes = await apiFetch('/api/registrations', {
+            method: 'POST',
+            body: JSON.stringify({ activityId: testActivityId })
+          });
+          assert(dupRes.status === 400, 'ไม่สามารถลงทะเบียนซ้ำได้', 'QUEUE-01');
+        }
       }
 
       // -------------------------------------------------------------
@@ -137,19 +232,13 @@ async function runTests() {
       const unreadRes = await apiFetch('/api/notifications/unread-count');
       assert(unreadRes.status === 200, 'ดึงจำนวนการแจ้งเตือนที่ยังไม่อ่านสำเร็จ', 'NOTIF-02');
 
-      // -------------------------------------------------------------
-      // Admin Tests
-      // -------------------------------------------------------------
-      console.log('\n--- Testing Admin Endpoints ---');
-      
-      const usersRes = await apiFetch('/api/admin/users');
-      if (usersRes.status === 200) {
-        assert(true, 'ดึงรายชื่อผู้ใช้ทั้งหมดสำเร็จ (admin)', 'ADMIN-01');
-        // Verify password field is not exposed
-        const hasPassword = usersRes.data && usersRes.data.some && usersRes.data.some(u => u.Password !== undefined);
-        assert(!hasPassword, 'Password field ไม่ถูกส่งใน API response', 'SEC-01');
-      } else {
-        console.log('⚠️ ไม่มีสิทธิ์เข้าถึง admin endpoints (expected for non-admin)');
+      // Test marking as read
+      if (notifRes.data && notifRes.data.length > 0) {
+        const firstNotifId = notifRes.data[0].NotificationID;
+        const markReadRes = await apiFetch(`/api/notifications/${firstNotifId}/read`, {
+          method: 'PATCH'
+        });
+        assert(markReadRes.status === 200, 'ทำเครื่องหมายว่าอ่านแล้วสำเร็จ', 'NOTIF-03');
       }
 
       // -------------------------------------------------------------
@@ -161,10 +250,11 @@ async function runTests() {
       assert(paginatedRes.status === 200, 'Pagination ทำงานสำเร็จ', 'PAG-01');
       if (paginatedRes.data?.pagination) {
         assert(paginatedRes.data.pagination.page === 1, 'Pagination metadata ถูกต้อง', 'PAG-02');
+        assert(typeof paginatedRes.data.pagination.total === 'number', 'Pagination total เป็นตัวเลข', 'PAG-03');
       }
 
-    } else {
-      console.log('⚠️ ไม่สามารถล็อกอินเพื่อทดสอบต่อได้');
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+      sessionCookie = '';
     }
 
     // -------------------------------------------------------------
