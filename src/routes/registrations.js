@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
+import { executeQuery, executeTransaction } from '../config/db';
+import { logAudit, logError, logInfo } from '../utils/logger';
 import { notifyAdminNewRegistration } from '../utils/mailer';
 import { checkAndNotifyQueue } from './queues';
-import { executeQuery, executeTransaction } from '../config/db';
 
 const registrations = new Hono();
 
@@ -78,35 +79,26 @@ registrations.post('/', requireAuth, async (c) => {
       c.env
     );
 
-    const registrationId = insertResult.insertId;
+    logAudit('registration_created', session.user.id, {
+      activityId,
+      activityTitle: activity.Title,
+      registrationId: insertResult.insertId
+    });
 
-    // แจ้ง admin/organizer ว่ามีผู้สมัครใหม่ (outside transaction for performance)
-    const notifyTargets = await executeQuery(
-      `SELECT UserID, Email FROM users WHERE Role = 'admin' OR UserID = ?`,
-      [activity.OrganizerID || 0],
-      c.env
-    );
-
-    const user = await executeQuery('SELECT Name, Email FROM users WHERE UserID = ?', [session.user.id], c.env);
-
-    for (const target of notifyTargets) {
-      await executeQuery(
-        'INSERT INTO notifications (UserID, RegistrationID, Message) VALUES (?, ?, ?)',
-        [target.UserID, registrationId, `มีผู้สมัครเข้าร่วมกิจกรรม "${activity.Title}" รอการอนุมัติ`],
-        c.env
-      );
-      if (target.Email) {
-        notifyAdminNewRegistration({
-          ActivityTitle: activity.Title,
-          UserName: user[0]?.Name,
-          UserEmail: user[0]?.Email,
-        }, target.Email, c.env).catch(err => console.error('Email error:', err));
-      }
+    // Notify admin
+    try {
+      await notifyAdminNewRegistration({
+        ActivityTitle: activity.Title,
+        UserName: session.user.name,
+        UserEmail: session.user.email
+      }, c.env.ADMIN_EMAIL || 'admin@volunteer.ac.th', c.env);
+    } catch (emailError) {
+      logError('Failed to send registration notification email', emailError, { registrationId: insertResult.insertId });
     }
 
-    return c.json({ success: true, registrationId });
+    return c.json({ success: true, registrationId: insertResult.insertId });
   } catch (error) {
-    console.error('Registration transaction error:', error);
+    logError('Registration transaction error', error, { activityId, userId: session.user.id });
     return c.json({ error: 'เกิดข้อผิดพลาดในการลงทะเบียน กรุณาลองใหม่' }, 500);
   }
 });
@@ -130,6 +122,12 @@ registrations.patch('/:id/cancel', requireAuth, async (c) => {
   const registration = rows[0];
 
   await executeQuery("UPDATE registrations SET Status = 'cancelled' WHERE RegistrationID = ?", [id], c.env);
+
+  logAudit('registration_cancelled', session.user.id, {
+    registrationId: id,
+    activityId: registration.ActivityID,
+    previousStatus: registration.Status
+  });
 
   // แจ้งคนที่รอคิวถัดไปสำหรับกิจกรรมนี้
   await checkAndNotifyQueue(registration.ActivityID, c.env);

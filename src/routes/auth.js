@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
-import { requireAuth } from '../middleware/auth';
-import { createSession, destroySession, getSession } from '../middleware/session';
+import { executeQuery } from '../config/db';
+import { createSession, getSession } from '../middleware/session';
+import { logAudit, logError, logWarn } from '../utils/logger';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { evaluateLoginAttempt, DEFAULT_MAX_ATTEMPTS, DEFAULT_LOCK_MINUTES } from '../utils/authLock';
 import { logSecurityEvent } from '../utils/securityLog';
-import { executeQuery } from '../config/db';
 
 const auth = new Hono();
 
