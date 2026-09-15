@@ -39,6 +39,22 @@ export const createSession = async (userData, env) => {
   return sessionId;
 };
 
+export const setSessionCookie = (sessionId, isProduction = false) => {
+  const cookieOptions = [
+    `session=${sessionId}`,
+    'HttpOnly',
+    'SameSite=Lax',
+    'Path=/',
+    `Max-Age=${SESSION_LIFETIME / 1000}`
+  ];
+  
+  if (isProduction) {
+    cookieOptions.push('Secure');
+  }
+  
+  return cookieOptions.join('; ');
+};
+
 export const destroySession = async (sessionId, env) => {
   if (sessionId && env?.SESSIONS) {
     await env.SESSIONS.delete(sessionId);

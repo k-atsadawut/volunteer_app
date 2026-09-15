@@ -1,97 +1,89 @@
 -- ============================================================
--- ข้อมูลทดสอบ / Test Data for Room Booking System
+-- ข้อมูลทดสอบ / Test Data for Volunteer Activity Hub
 -- ============================================================
 
 -- ------------------------------------------------------------
--- Users (รหัสผ่านทั้งหมดคือ "password123" - SHA-256 hash)
+-- Users (รหัสผ่านทั้งหมดคือ "password123" - bcrypt hash)
 -- ------------------------------------------------------------
 INSERT INTO users (Name, Email, Password, Role, Faculty, Department, force_change_password) VALUES
-('Admin User', 'admin@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'admin', 'IT', 'Computer Science', 0),
-('Teacher Somchai', 'teacher1@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'teacher', 'Engineering', 'Electrical', 0),
-('Teacher Suda', 'teacher2@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'teacher', 'Business', 'Marketing', 0),
-('Student Nop', 'student1@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Engineering', 'Computer Engineering', 1),
-('Student Mali', 'student2@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Business', 'Accounting', 1),
-('Student Som', 'student3@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Arts', 'Design', 1),
-('Student Dang', 'student4@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Science', 'Physics', 1),
-('Student Nam', 'student5@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'IT', 'Information Technology', 1);
+('Admin User', 'admin@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'admin', 'IT', 'Computer Science', 0),
+('Organizer Somchai', 'organizer1@ngo.org', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'organizer', NULL, NULL, 0),
+('Organizer Suda', 'organizer2@ngo.org', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'organizer', NULL, NULL, 0),
+('Student Nop', 'student1@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'Engineering', 'Computer Engineering', 1),
+('Student Mali', 'student2@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'Business', 'Accounting', 1),
+('Student Som', 'student3@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'Arts', 'Design', 1),
+('Student Dang', 'student4@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'Science', 'Physics', 1),
+('Student Nam', 'student5@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'IT', 'Information Technology', 1);
 
 -- ------------------------------------------------------------
--- Rooms
+-- Activities (กิจกรรมจิตอาสา)
 -- ------------------------------------------------------------
-INSERT INTO rooms (RoomName, Capacity, Status) VALUES
-('Digital Media Lab A', 1, 'available'),
-('Digital Media Lab B', 1, 'available'),
-('Recording Studio 1', 1, 'available'),
-('Editing Room 1', 1, 'available');
+INSERT INTO activities (Title, Description, Category, OrganizerID, OrganizerName, Location, LocationLat, LocationLng, StartDate, EndDate, StartTime, EndTime, MaxParticipants, HoursAwarded, Status) VALUES
+('ทำความสะอาดชายหาดบางแสน', 'ร่วมกันเก็บขยะและทำความสะอาดชายหาดเพื่อสิ่งแวดล้อม', 'environment', 2, 'Organizer Somchai', 'ชายหาดบางแสน', 13.2847, 100.5725, '2026-09-20', '2026-09-20', '08:00:00', '12:00:00', 30, 4.0, 'open'),
+('สอนเด็กยากจนคอมพิวเตอร์พื้นฐาน', 'สอนการใช้คอมพิวเตอร์และอินเทอร์เน็ตเบื้องต้นให้เด็กในชุมชน', 'education', 2, 'Organizer Somchai', 'ศูนย์เรียนรู้ชุมชน', 13.7368, 100.5231, '2026-09-25', '2026-09-25', '09:00:00', '16:00:00', 15, 8.0, 'open'),
+('ตรวจสุขภาพฟรีชุมชน', 'ตรวจสุขภาพและให้คำปรึกษาด้านสุขภาพแก่ผู้สูงอายุ', 'health', 3, 'Organizer Suda', 'วัดใจกลาง', 13.7563, 100.5018, '2026-10-01', '2026-10-01', '08:30:00', '15:00:00', 50, 6.5, 'open'),
+('เตรียมอาหารกลางวันให้ผู้ยากไร้', 'ปรุงอาหารและแจกจ่ายให้ผู้ยากไร้ในชุมชน', 'community', 3, 'Organizer Suda', 'มูลนิธิช่วยคนยากไร้', 13.7432, 100.4889, '2026-10-05', '2026-10-05', '07:00:00', '13:00:00', 20, 6.0, 'draft'),
+('ช่วยเหลือผู้ประสบภัยน้ำท่วม', 'ส่งของและช่วยเหลือผู้ประสบภัยน้ำท่วมในพื้นที่', 'disaster_relief', 2, 'Organizer Somchai', 'จังหวัดอยุธยา', 14.3694, 100.5879, '2026-09-15', '2026-09-17', '08:00:00', '18:00:00', 100, 24.0, 'ongoing');
 
 -- ------------------------------------------------------------
--- Holidays (วันหยุดปี 2026)
+-- Registrations (การลงทะเบียนเข้าร่วมกิจกรรม)
 -- ------------------------------------------------------------
-INSERT INTO holidays (HolidayDate, Description) VALUES
-('2026-01-01', 'วันขึ้นปีใหม่'),
-('2026-02-14', 'วันวาเลนไทน์'),
-('2026-04-13', 'วันสงกรานต์'),
-('2026-04-14', 'วันสงกรานต์'),
-('2026-04-15', 'วันสงกรานต์'),
-('2026-05-01', 'วันแรงงานแห่งชาติ'),
-('2026-05-05', 'วันฉัตรมงคล'),
-('2026-07-01', 'วันเฉลิมพระชนมพรรษา'),
-('2026-08-12', 'วันแม่แห่งชาติ'),
-('2026-10-23', 'วันปิยมหาราช'),
-('2026-12-05', 'วันพ่อแห่งชาติ'),
-('2026-12-10', 'วันรัฐธรรมนูญ');
+-- การลงทะเบียนที่อนุมัติแล้ว
+INSERT INTO registrations (UserID, ActivityID, Status) VALUES
+(4, 1, 'approved'),
+(5, 1, 'approved'),
+(4, 2, 'approved');
+
+-- การลงทะเบียนที่รออนุมัติ
+INSERT INTO registrations (UserID, ActivityID, Status) VALUES
+(6, 1, 'pending'),
+(7, 2, 'pending'),
+(8, 3, 'pending');
+
+-- การลงทะเบียนที่ถูกปฏิเสธ
+INSERT INTO registrations (UserID, ActivityID, Status) VALUES
+(5, 3, 'rejected');
+
+-- การลงทะเบียนที่ถูกยกเลิก
+INSERT INTO registrations (UserID, ActivityID, Status) VALUES
+(6, 2, 'cancelled');
+
+-- การลงทะเบียนที่เข้าร่วมแล้ว
+INSERT INTO registrations (UserID, ActivityID, Status) VALUES
+(4, 5, 'attended');
 
 -- ------------------------------------------------------------
--- Bookings (ข้อมูลการจองตัวอย่าง)
+-- Queues (คิวรอเข้าร่วมกิจกรรมเมื่อเต็ม)
 -- ------------------------------------------------------------
--- การจองที่อนุมัติแล้ว
-INSERT INTO bookings (UserID, RoomID, BookingDate, StartTime, EndTime, Status) VALUES
-(2, 1, '2026-07-02', '09:00:00', '11:00:00', 'approved'),
-(2, 1, '2026-07-03', '13:00:00', '15:00:00', 'approved'),
-(3, 2, '2026-07-02', '10:00:00', '12:00:00', 'approved');
-
--- การจองที่รออนุมัติ
-INSERT INTO bookings (UserID, RoomID, BookingDate, StartTime, EndTime, Status) VALUES
-(4, 1, '2026-07-04', '09:00:00', '11:00:00', 'pending'),
-(5, 3, '2026-07-05', '14:00:00', '16:00:00', 'pending'),
-(6, 2, '2026-07-06', '10:00:00', '12:00:00', 'pending');
-
--- การจองที่ถูกปฏิเสธ
-INSERT INTO bookings (UserID, RoomID, BookingDate, StartTime, EndTime, Status) VALUES
-(7, 4, '2026-07-01', '09:00:00', '11:00:00', 'rejected');
-
--- การจองที่ถูกยกเลิก
-INSERT INTO bookings (UserID, RoomID, BookingDate, StartTime, EndTime, Status) VALUES
-(8, 4, '2026-06-30', '13:00:00', '15:00:00', 'cancelled');
-
--- ------------------------------------------------------------
--- Queues (คิวรอจอง)
--- ------------------------------------------------------------
-INSERT INTO queues (UserID, RoomID, BookingDate, StartTime, EndTime, Status) VALUES
-(4, 1, '2026-07-04', '11:00:00', '13:00:00', 'waiting'),
-(5, 3, '2026-07-05', '16:00:00', '18:00:00', 'waiting');
+INSERT INTO queues (UserID, ActivityID, Status) VALUES
+(7, 1, 'waiting'),
+(8, 2, 'waiting');
 
 -- ------------------------------------------------------------
 -- Notifications (การแจ้งเตือน)
 -- ------------------------------------------------------------
-INSERT INTO notifications (UserID, BookingID, Message, IsRead) VALUES
-(4, 4, 'การจองห้อง Digital Media Lab A ของคุณรอการอนุมัติ', 0),
-(5, 5, 'การจองห้อง Recording Studio 1 ของคุณรอการอนุมัติ', 0),
-(7, 7, 'การจองห้อง Editing Room 1 ของคุณถูกปฏิเสธ', 1),
-(2, 1, 'การจองห้อง Digital Media Lab A ของคุณได้รับการอนุมัติแล้ว', 1);
+INSERT INTO notifications (UserID, RegistrationID, Message, IsRead) VALUES
+(6, 4, 'การลงทะเบียนกิจกรรม "ทำความสะอาดชายหาดบางแสน" ของคุณรอการอนุมัติ', 0),
+(7, 5, 'การลงทะเบียนกิจกรรม "สอนเด็กยากจนคอมพิวเตอร์พื้นฐาน" ของคุณรอการอนุมัติ', 0),
+(5, 7, 'การลงทะเบียนกิจกรรม "ตรวจสุขภาพฟรีชุมชน" ของคุณถูกปฏิเสธ', 1),
+(4, 1, 'การลงทะเบียนกิจกรรม "ทำความสะอาดชายหาดบางแสน" ของคุณได้รับการอนุมัติแล้ว', 1);
 
 -- ------------------------------------------------------------
--- Maintenance Reports (รายงานการแจ้งซ่อม)
+-- Photo Verifications (การยืนยันด้วยรูปถ่าย)
 -- ------------------------------------------------------------
-INSERT INTO maintenance_reports (RoomID, UserID, Description, Status) VALUES
-(1, 2, 'ไมโครโฟนไม่ทำงาน', 'completed'),
-(3, 4, 'หน้าจอมีจุดเสีย', 'pending'),
-(4, 5, 'แอร์ไม่เย็น', 'in_progress');
+INSERT INTO photo_verifications (RegistrationID, PhotoUrl, ExifLat, ExifLng, ExifTakenAt, DistanceMeters, Status) VALUES
+(8, 'https://r2.dev/volunteer-activity-photos/verification_001.jpg', 14.3694, 100.5879, '2026-09-15 10:30:00', 15.5, 'verified');
+
+-- ------------------------------------------------------------
+-- Hours Log (บันทึกชั่วโมงจิตอาสา)
+-- ------------------------------------------------------------
+INSERT INTO hours_log (UserID, ActivityID, RegistrationID, Hours, GrantedAt, GrantedBy) VALUES
+(4, 5, 8, 24.0, '2026-09-17 18:00:00', 1);
 
 -- ------------------------------------------------------------
 -- หมายเหตุ:
 -- - รหัสผ่านทั้งหมดคือ "password123" (bcrypt hash)
 -- - Admin ไม่ต้องเปลี่ยนรหัสผ่าน (force_change_password = 0)
 -- - Students ทั้งหมดต้องเปลี่ยนรหัสผ่านครั้งแรก (force_change_password = 1)
--- - ข้อมูลการจองมีสถานะต่างๆ เพื่อทดสอบ workflow ทั้งหมด
+-- - ข้อมูลการลงทะเบียนมีสถานะต่างๆ เพื่อทดสอบ workflow ทั้งหมด
 -- ============================================================

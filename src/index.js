@@ -11,6 +11,7 @@ import adminRegistrationRoutes from './routes/admin/registrations';
 import adminReportRoutes from './routes/admin/reports';
 import adminPasswordRequestsRoutes from './routes/admin/password-requests';
 import adminNotifyRoutes from './routes/admin/notify';
+import organizerRegistrationRoutes from './routes/organizer/registrations';
 import { scheduled } from './scheduled/reminder';
 import { sessionMiddleware } from './middleware/session';
 
@@ -18,7 +19,11 @@ const app = new Hono();
 
 // Middleware
 app.use('*', cors({
-  origin: (origin) => origin || '*',
+  origin: (origin) => {
+    // In production, restrict to specific domain (set via wrangler secret)
+    // For now, allow any origin - configure ALLOWED_ORIGINS in production
+    return origin || '*';
+  },
   credentials: true,
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
@@ -37,6 +42,7 @@ app.route('/api/admin/registrations', adminRegistrationRoutes);
 app.route('/api/admin/reports', adminReportRoutes);
 app.route('/api/admin/password-requests', adminPasswordRequestsRoutes);
 app.route('/api/admin/notify', adminNotifyRoutes);
+app.route('/api/organizer/registrations', organizerRegistrationRoutes);
 
 // Fallback - SPA-style redirect
 app.get('*', async (c) => {

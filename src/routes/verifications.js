@@ -8,6 +8,11 @@ const verifications = new Hono();
 // ระยะห่างสูงสุดที่ยอมรับได้ระหว่างพิกัดรูปกับพิกัดกิจกรรม (เมตร)
 const MAX_DISTANCE_METERS = 300;
 
+// Upload limits
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
+const MAX_UPLOADS_PER_REGISTRATION = 3;
+
 // POST /api/verifications — อัปโหลดรูปพิสูจน์การเข้าร่วมกิจกรรม
 // body: { registrationId, photoBase64, exifLat, exifLng, exifTakenAt }
 // หมายเหตุ: การอ่านค่า EXIF (lat/lng/เวลาถ่ายภาพ) ทำที่ฝั่ง frontend ด้วยไลบรารี exifr
@@ -18,6 +23,28 @@ verifications.post('/', requireAuth, async (c) => {
 
   if (!registrationId || !photoBase64) {
     return c.json({ error: 'กรุณาระบุ registrationId และแนบรูปภาพ' }, 400);
+  }
+
+  // Validate file size
+  const binary = Uint8Array.from(atob(photoBase64.replace(/^data:image\/\w+;base64,/, '')), ch => ch.charCodeAt(0));
+  if (binary.length > MAX_FILE_SIZE_BYTES) {
+    return c.json({ error: `ขนาดไฟล์ต้องไม่เกิน ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB` }, 400);
+  }
+
+  // Validate MIME type
+  const mimeType = photoBase64.match(/^data:(image\/\w+);base64,/)?.[1];
+  if (!mimeType || !ALLOWED_MIME_TYPES.includes(mimeType)) {
+    return c.json({ error: 'รองรับเฉพาะไฟล์รูปภาพประเภท JPEG และ PNG เท่านั้น' }, 400);
+  }
+
+  // Check upload count per registration
+  const existingUploads = await executeQuery(
+    'SELECT COUNT(*) AS cnt FROM photo_verifications WHERE RegistrationID = ?',
+    [registrationId],
+    c.env
+  );
+  if (existingUploads[0].cnt >= MAX_UPLOADS_PER_REGISTRATION) {
+    return c.json({ error: `อัปโหลดรูปภาพครบจำนวนแล้ว (สูงสุด ${MAX_UPLOADS_PER_REGISTRATION} รูป)` }, 400);
   }
 
   const regRows = await executeQuery(
@@ -37,9 +64,8 @@ verifications.post('/', requireAuth, async (c) => {
   // เก็บไฟล์รูปลง R2 (ถ้ามี binding) — key แบบ verifications/{registrationId}/{timestamp}.jpg
   let photoUrl = null;
   if (c.env.PHOTOS_BUCKET) {
-    const key = `verifications/${registrationId}/${Date.now()}.jpg`;
-    const binary = Uint8Array.from(atob(photoBase64.replace(/^data:image\/\w+;base64,/, '')), ch => ch.charCodeAt(0));
-    await c.env.PHOTOS_BUCKET.put(key, binary, { httpMetadata: { contentType: 'image/jpeg' } });
+    const key = `verifications/${registrationId}/${Date.now()}.${mimeType.split('/')[1]}`;
+    await c.env.PHOTOS_BUCKET.put(key, binary, { httpMetadata: { contentType: mimeType } });
     photoUrl = key; // แปลงเป็น public URL ที่ฝั่ง frontend ตาม R2 public bucket config
   } else {
     return c.json({ error: 'ระบบยังไม่ได้ตั้งค่าที่เก็บรูปภาพ (R2 bucket) กรุณาติดต่อผู้ดูแลระบบ' }, 500);

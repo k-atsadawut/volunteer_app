@@ -8,7 +8,7 @@ const adminUsers = new Hono();
 // GET /api/admin/users — ดูรายชื่อผู้ใช้ทั้งหมด
 adminUsers.get('/', requireAdmin, async (c) => {
   const result = await executeQuery(
-    'SELECT UserID, Name, Email, Password, Role, Faculty, Department, force_change_password, failed_login_count, created_at FROM users ORDER BY Name',
+    'SELECT UserID, Name, Email, Role, Faculty, Department, force_change_password, failed_login_count, created_at FROM users ORDER BY Name',
     [],
     c.env
   );

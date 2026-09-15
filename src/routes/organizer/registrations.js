@@ -1,22 +1,29 @@
 import { Hono } from 'hono';
-import { requireAdmin, requireAuth } from '../../middleware/auth';
+import { requireAuth } from '../../middleware/auth';
 import { executeQuery } from '../../config/db';
 import { notifyRegistrationApproved, notifyRegistrationRejected } from '../../utils/mailer';
 
-const adminRegistrations = new Hono();
+const organizerRegistrations = new Hono();
 
-// GET /api/admin/registrations — ดูการลงทะเบียนทั้งหมด (filter ตาม status / activityId)
-adminRegistrations.get('/', requireAdmin, async (c) => {
+// GET /api/organizer/registrations — ดูการลงทะเบียนกิจกรรมของตัวเอง (organizer only)
+organizerRegistrations.get('/', requireAuth, async (c) => {
+  const session = c.get('session');
+  
+  if (session.user.role !== 'organizer') {
+    return c.json({ error: 'ไม่มีสิทธิ์เข้าถึง' }, 403);
+  }
+
   const { status, activityId } = c.req.query();
 
   let query = `
-    SELECT r.*, u.Name AS UserName, u.Email AS UserEmail, a.Title AS ActivityTitle
+    SELECT r.*, u.Name AS UserName, u.Email AS UserEmail, a.Title AS ActivityTitle, a.OrganizerID
     FROM registrations r
     JOIN users u ON r.UserID = u.UserID
     JOIN activities a ON r.ActivityID = a.ActivityID
+    WHERE a.OrganizerID = ?
   `;
 
-  const params = [];
+  const params = [session.user.id];
   const conditions = [];
 
   if (status) {
@@ -28,7 +35,7 @@ adminRegistrations.get('/', requireAdmin, async (c) => {
     params.push(activityId);
   }
   if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
+    query += ' AND ' + conditions.join(' AND ');
   }
 
   query += ' ORDER BY r.created_at DESC';
@@ -37,13 +44,30 @@ adminRegistrations.get('/', requireAdmin, async (c) => {
   return c.json(result);
 });
 
-// PATCH /api/admin/registrations/:id — approve หรือ reject (admin only)
-adminRegistrations.patch('/:id', requireAdmin, async (c) => {
+// PATCH /api/organizer/registrations/:id — approve หรือ reject (organizer only, for their activities)
+organizerRegistrations.patch('/:id', requireAuth, async (c) => {
+  const session = c.get('session');
+  
+  if (session.user.role !== 'organizer') {
+    return c.json({ error: 'ไม่มีสิทธิ์อนุมัติ/ปฏิเสธการลงทะเบียน' }, 403);
+  }
+
   const id = c.req.param('id');
   const { action } = await c.req.json();
 
   if (!['approved', 'rejected'].includes(action)) {
     return c.json({ error: 'action ต้องเป็น approved หรือ rejected' }, 400);
+  }
+
+  // ตรวจสอบว่ากิจกรรมนี้เป็นของ organizer คนนี้หรือไม่
+  const activityCheck = await executeQuery(`
+    SELECT a.OrganizerID FROM registrations r
+    JOIN activities a ON r.ActivityID = a.ActivityID
+    WHERE r.RegistrationID = ? LIMIT 1
+  `, [id], c.env);
+
+  if (!activityCheck[0] || activityCheck[0].OrganizerID !== session.user.id) {
+    return c.json({ error: 'ไม่มีสิทธิ์จัดการกิจกรรมนี้' }, 403);
   }
 
   await executeQuery('UPDATE registrations SET Status = ? WHERE RegistrationID = ?', [action, id], c.env);
@@ -77,4 +101,4 @@ adminRegistrations.patch('/:id', requireAdmin, async (c) => {
   return c.json({ success: true });
 });
 
-export default adminRegistrations;
+export default organizerRegistrations;
