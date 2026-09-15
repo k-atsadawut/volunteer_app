@@ -41,7 +41,10 @@ adminReports.get('/registrations', requireAdmin, async (c) => {
 
 // GET /api/admin/reports/activities — รายงานความนิยมของกิจกรรม
 adminReports.get('/activities', requireAdmin, async (c) => {
-  const { startDate, endDate, category } = c.req.query();
+  const { startDate, endDate, category, page = '1', limit = '20' } = c.req.query();
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
+  const offset = (pageNum - 1) * limitNum;
 
   let query = `
     SELECT
@@ -50,6 +53,11 @@ adminReports.get('/activities', requireAdmin, async (c) => {
       SUM(CASE WHEN r.Status = 'approved' THEN 1 ELSE 0 END) as approved_registrations,
       SUM(CASE WHEN r.Status = 'attended' THEN 1 ELSE 0 END) as attended_count
     FROM activities a
+    LEFT JOIN registrations r ON a.ActivityID = r.ActivityID
+  `;
+
+  const countQuery = `
+    SELECT COUNT(DISTINCT a.ActivityID) as total FROM activities a
     LEFT JOIN registrations r ON a.ActivityID = r.ActivityID
   `;
 
@@ -70,17 +78,38 @@ adminReports.get('/activities', requireAdmin, async (c) => {
   }
   if (conditions.length > 0) {
     query += ' WHERE ' + conditions.join(' AND ');
+    countQuery += ' WHERE ' + conditions.join(' AND ');
   }
 
   query += ' GROUP BY a.ActivityID ORDER BY total_registrations DESC';
+  query += ' LIMIT ? OFFSET ?';
+  params.push(limitNum, offset);
+
+  const countResult = await executeQuery(countQuery, params.slice(0, params.length - 2), c.env);
+  const total = countResult[0].total;
+  const totalPages = Math.ceil(total / limitNum);
 
   const result = await executeQuery(query, params, c.env);
-  return c.json(result);
+
+  return c.json({
+    data: result,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages,
+      hasNext: pageNum < totalPages,
+      hasPrev: pageNum > 1
+    }
+  });
 });
 
 // GET /api/admin/reports/users — รายงานผู้ใช้ที่เข้าร่วมกิจกรรมมากที่สุด / สะสมชั่วโมงสูงสุด
 adminReports.get('/users', requireAdmin, async (c) => {
-  const { limit } = c.req.query();
+  const { page = '1', limit = '20' } = c.req.query();
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
+  const offset = (pageNum - 1) * limitNum;
 
   let query = `
     SELECT
@@ -93,11 +122,32 @@ adminReports.get('/users', requireAdmin, async (c) => {
     ORDER BY u.total_hours DESC, total_registrations DESC
   `;
 
-  const n = limit ? Math.max(1, Math.min(1000, parseInt(limit, 10) || 10)) : 10;
-  query += ' LIMIT ' + n;
+  const countQuery = `
+    SELECT COUNT(DISTINCT u.UserID) as total FROM users u
+    LEFT JOIN registrations r ON u.UserID = r.UserID
+    GROUP BY u.UserID
+  `;
 
-  const result = await executeQuery(query, [], c.env);
-  return c.json(result);
+  query += ' LIMIT ? OFFSET ?';
+  const params = [limitNum, offset];
+
+  const countResult = await executeQuery(countQuery, [], c.env);
+  const total = countResult.length;
+  const totalPages = Math.ceil(total / limitNum);
+
+  const result = await executeQuery(query, params, c.env);
+
+  return c.json({
+    data: result,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages,
+      hasNext: pageNum < totalPages,
+      hasPrev: pageNum > 1
+    }
+  });
 });
 
 export default adminReports;

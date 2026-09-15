@@ -7,11 +7,20 @@ const adminRegistrations = new Hono();
 
 // GET /api/admin/registrations — ดูการลงทะเบียนทั้งหมด (filter ตาม status / activityId)
 adminRegistrations.get('/', requireAdmin, async (c) => {
-  const { status, activityId } = c.req.query();
+  const { status, activityId, page = '1', limit = '20' } = c.req.query();
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
+  const offset = (pageNum - 1) * limitNum;
 
   let query = `
     SELECT r.*, u.Name AS UserName, u.Email AS UserEmail, a.Title AS ActivityTitle
     FROM registrations r
+    JOIN users u ON r.UserID = u.UserID
+    JOIN activities a ON r.ActivityID = a.ActivityID
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*) AS total FROM registrations r
     JOIN users u ON r.UserID = u.UserID
     JOIN activities a ON r.ActivityID = a.ActivityID
   `;
@@ -29,12 +38,30 @@ adminRegistrations.get('/', requireAdmin, async (c) => {
   }
   if (conditions.length > 0) {
     query += ' WHERE ' + conditions.join(' AND ');
+    countQuery += ' WHERE ' + conditions.join(' AND ');
   }
 
+  const countResult = await executeQuery(countQuery, params, c.env);
+  const total = countResult[0].total;
+  const totalPages = Math.ceil(total / limitNum);
+
   query += ' ORDER BY r.created_at DESC';
+  query += ' LIMIT ? OFFSET ?';
+  params.push(limitNum, offset);
 
   const result = await executeQuery(query, params, c.env);
-  return c.json(result);
+
+  return c.json({
+    data: result,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages,
+      hasNext: pageNum < totalPages,
+      hasPrev: pageNum > 1
+    }
+  });
 });
 
 // PATCH /api/admin/registrations/:id — approve หรือ reject (admin only)

@@ -6,7 +6,10 @@ const activities = new Hono();
 
 // GET /api/activities — ดูรายการกิจกรรมทั้งหมด (filter ได้ตาม category / status / คำค้นหา)
 activities.get('/', requireAuth, async (c) => {
-  const { category, status, q } = c.req.query();
+  const { category, status, q, page = '1', limit = '20' } = c.req.query();
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = Math.min(parseInt(limit, 10) || 20, 100); // Max 100 per page
+  const offset = (pageNum - 1) * limitNum;
 
   let query = `
     SELECT
@@ -16,6 +19,10 @@ activities.get('/', requireAuth, async (c) => {
         WHERE r.ActivityID = a.ActivityID AND r.Status IN ('pending','approved','attended')
       ), 0) AS registered_count
     FROM activities a
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*) AS total FROM activities a
   `;
 
   const params = [];
@@ -39,12 +46,31 @@ activities.get('/', requireAuth, async (c) => {
 
   if (conditions.length > 0) {
     query += ' WHERE ' + conditions.join(' AND ');
+    countQuery += ' WHERE ' + conditions.join(' AND ');
   }
 
+  // Get total count for pagination
+  const countResult = await executeQuery(countQuery, params, c.env);
+  const total = countResult[0].total;
+  const totalPages = Math.ceil(total / limitNum);
+
   query += ' ORDER BY a.StartDate ASC';
+  query += ' LIMIT ? OFFSET ?';
+  params.push(limitNum, offset);
 
   const result = await executeQuery(query, params, c.env);
-  return c.json(result);
+
+  return c.json({
+    data: result,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages,
+      hasNext: pageNum < totalPages,
+      hasPrev: pageNum > 1
+    }
+  });
 });
 
 // GET /api/activities/:id — รายละเอียดกิจกรรมเดียว
