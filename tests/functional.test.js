@@ -1,26 +1,28 @@
 // tests/functional.test.js
-// Automated script to test Functional Requirements (FR-01 to FR-22)
+// Automated script to test Volunteer Activity Hub API
 
-const API_BASE = 'https://room-booking-system.sidksuug.workers.dev';
+const API_BASE = process.env.API_BASE || 'http://localhost:8787';
 
 // Test variables
 let sessionCookie = '';
-const TEST_USER = { email: 'teacher1@university.ac.th', password: 'password123' };
+const TEST_USER = { email: 'admin@volunteer.ac.th', password: 'admin123' };
 let currentUserId = null;
+let testActivityId = null;
+let testRegistrationId = null;
 
 async function runTests() {
-  console.log('🚀 เริ่มต้นรันเทสเคส Automated Functional Tests (FR-01 - FR-22)...\n');
+  console.log('🚀 เริ่มต้นรันเทสเคส Volunteer Activity Hub API...\n');
   
   let total = 0;
   let passed = 0;
 
-  function assert(condition, message, frCode) {
+  function assert(condition, message, code) {
     total++;
     if (condition) {
-      console.log(`✅ [PASS] ${frCode}: ${message}`);
+      console.log(`✅ [PASS] ${code}: ${message}`);
       passed++;
     } else {
-      console.log(`❌ [FAIL] ${frCode}: ${message}`);
+      console.log(`❌ [FAIL] ${code}: ${message}`);
     }
   }
 
@@ -31,7 +33,7 @@ async function runTests() {
     
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
     const setCookie = res.headers.get('set-cookie');
-    if (setCookie) sessionCookie = setCookie; // store session cookie
+    if (setCookie) sessionCookie = setCookie;
     
     let data;
     try { data = await res.json(); } catch(e) { data = null; }
@@ -40,15 +42,16 @@ async function runTests() {
 
   try {
     // -------------------------------------------------------------
-    // FR-19: กลไกล็อกบัญชี (Account Lockout)
+    // Authentication Tests
     // -------------------------------------------------------------
-    console.log('--- Testing Authentication & Security ---');
-    // Test a failed login
+    console.log('--- Testing Authentication ---');
+    
+    // Test failed login
     let loginRes = await apiFetch('/api/auth/login', { 
       method: 'POST', 
-      body: JSON.stringify({ email: 'teacher1@university.ac.th', password: 'wrong' }) 
+      body: JSON.stringify({ email: 'admin@volunteer.ac.th', password: 'wrong' }) 
     });
-    assert(loginRes.status === 401 || loginRes.status === 403, 'ปฏิเสธการล็อกอินด้วยรหัสผ่านผิด', 'FR-19');
+    assert(loginRes.status === 401, 'ปฏิเสธการล็อกอินด้วยรหัสผ่านผิด', 'AUTH-01');
 
     // Login with correct user
     loginRes = await apiFetch('/api/auth/login', { 
@@ -57,69 +60,118 @@ async function runTests() {
     });
     
     if (loginRes.status === 200) {
-      assert(true, 'ผู้ใช้เข้าสู่ระบบสำเร็จ', 'FR-00');
-      
-      // -------------------------------------------------------------
-      // FR-01: ตรวจสอบตรรกะเวลา (Invalid Time Logic)
-      // -------------------------------------------------------------
-      console.log('\n--- Testing Booking Validation ---');
-      const invalidTimeRes = await apiFetch('/api/bookings', {
-        method: 'POST',
-        body: JSON.stringify({ roomId: 1, date: '2026-10-10', startTime: '14:00', endTime: '13:00', purpose: 'test' })
-      });
-      assert(invalidTimeRes.status === 400, 'ปฏิเสธคำขอเมื่อเวลาสิ้นสุดมาก่อนเวลาเริ่มต้น', 'FR-01');
+      assert(true, 'ผู้ใช้เข้าสู่ระบบสำเร็จ', 'AUTH-02');
+      currentUserId = loginRes.data?.user?.id;
 
       // -------------------------------------------------------------
-      // FR-02: ข้อจำกัดกรอบเวลา (Out of Business Hours)
+      // Activity Tests
       // -------------------------------------------------------------
-      const invalidHoursRes = await apiFetch('/api/bookings', {
+      console.log('\n--- Testing Activities ---');
+      
+      // Get activities list
+      const activitiesRes = await apiFetch('/api/activities');
+      assert(activitiesRes.status === 200, 'ดึงรายการกิจกรรมสำเร็จ', 'ACT-01');
+      assert(Array.isArray(activitiesRes.data?.data) || Array.isArray(activitiesRes.data), 'Activities response is array or paginated', 'ACT-02');
+
+      // Create a test activity (admin/organizer only)
+      const createActivityRes = await apiFetch('/api/activities', {
         method: 'POST',
-        body: JSON.stringify({ roomId: 1, date: '2026-10-10', startTime: '18:00', endTime: '19:00', purpose: 'test' })
+        body: JSON.stringify({
+          Title: 'Test Activity for API Testing',
+          Description: 'Automated test activity',
+          Category: 'community',
+          StartDate: '2027-01-15',
+          EndDate: '2027-01-15',
+          StartTime: '09:00',
+          EndTime: '12:00',
+          MaxParticipants: 10,
+          HoursAwarded: 3,
+          Status: 'open'
+        })
       });
-      assert(invalidHoursRes.status === 400, 'ปฏิเสธคำขอจองนอกเวลาทำการ (หลัง 17:00)', 'FR-02');
+      if (createActivityRes.status === 200) {
+        testActivityId = createActivityRes.data?.activityId;
+        assert(true, 'สร้างกิจกรรมใหม่สำเร็จ', 'ACT-03');
+      } else {
+        console.log('⚠️ ไม่สามารถสร้างกิจกรรมทดสอบ (อาจเป็น permission issue)');
+      }
 
       // -------------------------------------------------------------
-      // FR-05: สกัดกั้นวันหยุด (Holiday Prevention)
+      // Registration Tests
       // -------------------------------------------------------------
-      // Try to book on a weekend (Saturday = 2026-10-10)
-      const weekendRes = await apiFetch('/api/bookings', {
-        method: 'POST',
-        body: JSON.stringify({ roomId: 1, date: '2026-10-10', startTime: '09:00', endTime: '10:00', purpose: 'test' })
-      });
-      // Expected to fail because 2026-10-10 is a Saturday
-      assert(weekendRes.status === 400 && weekendRes.data?.error?.includes('หยุด'), 'ป้องกันการจองในวันเสาร์-อาทิตย์หรือวันหยุดราชการ', 'FR-05');
-
-      // -------------------------------------------------------------
-      // FR-06: จำกัดสิทธิ์โควตา (Quota Limit) & FR-03 (Double Booking)
-      // -------------------------------------------------------------
-      // Find a valid weekday date
-      const validDate = '2026-10-13'; // Tuesday
+      console.log('\n--- Testing Registrations ---');
       
-      // Attempt first valid booking
-      const validBookRes = await apiFetch('/api/bookings', {
-        method: 'POST',
-        body: JSON.stringify({ roomId: 1, date: validDate, startTime: '09:00', endTime: '11:00', purpose: 'test valid booking' })
-      });
-      assert(validBookRes.status === 200 || validBookRes.status === 400 /* if already booked */, 'ระบบจัดการคิวปกติ', 'FR-07');
-      
-      // If success, try to double book the exact same time (FR-03)
-      if (validBookRes.status === 200) {
-        const doubleBookRes = await apiFetch('/api/bookings', {
+      if (testActivityId) {
+        // Register for activity
+        const regRes = await apiFetch('/api/registrations', {
           method: 'POST',
-          body: JSON.stringify({ roomId: 1, date: validDate, startTime: '10:00', endTime: '12:00', purpose: 'overlap' })
+          body: JSON.stringify({ activityId: testActivityId, note: 'API test registration' })
         });
-        assert(doubleBookRes.status === 400, 'ดักจับการจองซ้อนทับ (Double Booking) ปฏิเสธสำเร็จ', 'FR-03');
+        if (regRes.status === 200) {
+          testRegistrationId = regRes.data?.registrationId;
+          assert(true, 'ลงทะเบียนกิจกรรมสำเร็จ', 'REG-01');
+        } else {
+          console.log('⚠️ ลงทะเบียนไม่สำเร็จ:', regRes.data?.error);
+        }
+
+        // Get own registrations
+        const myRegsRes = await apiFetch('/api/registrations');
+        assert(myRegsRes.status === 200, 'ดึงรายการลงทะเบียนของตัวเองสำเร็จ', 'REG-02');
+
+        // Test duplicate registration prevention
+        const dupRegRes = await apiFetch('/api/registrations', {
+          method: 'POST',
+          body: JSON.stringify({ activityId: testActivityId })
+        });
+        assert(dupRegRes.status === 400, 'ป้องกันการลงทะเบียนซ้ำ', 'REG-03');
+      }
+
+      // -------------------------------------------------------------
+      // Notification Tests
+      // -------------------------------------------------------------
+      console.log('\n--- Testing Notifications ---');
+      
+      const notifRes = await apiFetch('/api/notifications');
+      assert(notifRes.status === 200, 'ดึงรายการการแจ้งเตือนสำเร็จ', 'NOTIF-01');
+
+      const unreadRes = await apiFetch('/api/notifications/unread-count');
+      assert(unreadRes.status === 200, 'ดึงจำนวนการแจ้งเตือนที่ยังไม่อ่านสำเร็จ', 'NOTIF-02');
+
+      // -------------------------------------------------------------
+      // Admin Tests
+      // -------------------------------------------------------------
+      console.log('\n--- Testing Admin Endpoints ---');
+      
+      const usersRes = await apiFetch('/api/admin/users');
+      if (usersRes.status === 200) {
+        assert(true, 'ดึงรายชื่อผู้ใช้ทั้งหมดสำเร็จ (admin)', 'ADMIN-01');
+        // Verify password field is not exposed
+        const hasPassword = usersRes.data && usersRes.data.some && usersRes.data.some(u => u.Password !== undefined);
+        assert(!hasPassword, 'Password field ไม่ถูกส่งใน API response', 'SEC-01');
+      } else {
+        console.log('⚠️ ไม่มีสิทธิ์เข้าถึง admin endpoints (expected for non-admin)');
+      }
+
+      // -------------------------------------------------------------
+      // Pagination Tests
+      // -------------------------------------------------------------
+      console.log('\n--- Testing Pagination ---');
+      
+      const paginatedRes = await apiFetch('/api/activities?page=1&limit=5');
+      assert(paginatedRes.status === 200, 'Pagination ทำงานสำเร็จ', 'PAG-01');
+      if (paginatedRes.data?.pagination) {
+        assert(paginatedRes.data.pagination.page === 1, 'Pagination metadata ถูกต้อง', 'PAG-02');
       }
 
     } else {
-      console.log('⚠️ ไม่สามารถล็อกอินเพื่อทดสอบการจองได้ (Test user failed)');
+      console.log('⚠️ ไม่สามารถล็อกอินเพื่อทดสอบต่อได้');
     }
 
     // -------------------------------------------------------------
     // Summary
     // -------------------------------------------------------------
-    console.log(`\n📊 สรุปผลการทดสอบ: ผ่าน ${passed} จาก ${total} เครือข่าย API`);
-    console.log('👉 หมายเหตุ: Testcase ระดับ UI หรือ Background Jobs (เช่น FR-10 Realtime UI, FR-11 อีเมล, FR-15 แสกน QR) ต้องการทดสอบด้วย Manual QA เสมอ');
+    console.log(`\n📊 สรุปผลการทดสอบ: ผ่าน ${passed} จาก ${total} เคส`);
+    console.log('👉 หมายเหตุ: Testcase ระดับ UI, Email, และ Photo verification ต้องการทดสอบด้วย Manual QA');
 
   } catch (error) {
     console.error('Test Execution Failed:', error);
