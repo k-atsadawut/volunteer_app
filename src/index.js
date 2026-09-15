@@ -21,8 +21,14 @@ const app = new Hono();
 // Middleware
 app.use('*', cors({
   origin: (origin) => {
-    // In production, restrict to specific domain (set via wrangler secret)
-    // For now, allow any origin - configure ALLOWED_ORIGINS in production
+    // Production: Restrict to specific domains via ALLOWED_ORIGINS secret
+    // Format: comma-separated list, e.g., "https://example.com,https://www.example.com"
+    if (c.env?.ALLOWED_ORIGINS) {
+      const allowedOrigins = c.env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
+      if (!origin) return false; // Require origin header in production
+      return allowedOrigins.includes(origin);
+    }
+    // Development: Allow any origin
     return origin || '*';
   },
   credentials: true,

@@ -144,6 +144,53 @@ verifications.get('/', requireAuth, async (c) => {
   return c.json(rows);
 });
 
+// GET /api/verifications/:id/photo-url — Generate signed URL for photo access (with auth check)
+verifications.get('/:id/photo-url', requireAuth, async (c) => {
+  const session = c.get('session');
+  const id = c.req.param('id');
+
+  // Get verification details
+  const rows = await executeQuery(
+    `SELECT v.*, r.UserID, a.OrganizerID
+     FROM photo_verifications v 
+     JOIN registrations r ON v.RegistrationID = r.RegistrationID
+     JOIN activities a ON r.ActivityID = a.ActivityID
+     WHERE v.VerificationID = ? LIMIT 1`,
+    [id],
+    c.env
+  );
+  const verification = rows[0];
+  if (!verification) return c.json({ error: 'ไม่พบรายการนี้' }, 404);
+
+  // Authorization check: user can only access their own photos, admin/organizer can access photos they're reviewing
+  const isOwner = verification.UserID === session.user.id;
+  const isAdmin = session.user.role === 'admin';
+  const isOrganizer = session.user.role === 'organizer' && verification.OrganizerID === session.user.id;
+
+  if (!isOwner && !isAdmin && !isOrganizer) {
+    return c.json({ error: 'ไม่มีสิทธิ์เข้าถึงรูปภาพนี้' }, 403);
+  }
+
+  // Generate signed URL (valid for 1 hour)
+  if (!c.env.PHOTOS_BUCKET) {
+    return c.json({ error: 'ระบบยังไม่ได้ตั้งค่าที่เก็บรูปภาพ' }, 500);
+  }
+
+  try {
+    const signedUrl = await c.env.PHOTOS_BUCKET.signUrl(verification.PhotoUrl, {
+      expiresIn: 3600, // 1 hour
+    });
+    return c.json({ url: signedUrl });
+  } catch (error) {
+    console.error('Failed to generate signed URL:', error);
+    // Fallback: return direct URL if R2 is public bucket (for backward compatibility)
+    if (c.env.R2_PUBLIC_URL) {
+      return c.json({ url: `${c.env.R2_PUBLIC_URL}/${verification.PhotoUrl}` });
+    }
+    return c.json({ error: 'ไม่สามารถสร้างลิงก์เข้าถึงรูปภาพได้' }, 500);
+  }
+});
+
 // PATCH /api/verifications/:id/review — เจ้าหน้าที่ตรวจสอบด้วยตนเอง (approve/reject)
 verifications.patch('/:id/review', requireAuth, async (c) => {
   const session = c.get('session');
