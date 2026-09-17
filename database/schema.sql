@@ -66,6 +66,7 @@ CREATE TABLE registrations (
                                          NOT NULL DEFAULT 'pending',
     Note            VARCHAR(255)        NULL,
     reminder_sent   TINYINT(1)          NOT NULL DEFAULT 0,
+    CertificateUrl  VARCHAR(500)        NULL,
     created_at      DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME            NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_registration_user FOREIGN KEY (UserID) REFERENCES users(UserID)

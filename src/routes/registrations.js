@@ -4,6 +4,7 @@ import { executeQuery, executeTransaction } from '../config/db';
 import { logAudit, logError, logInfo } from '../utils/logger';
 import { notifyAdminNewRegistration } from '../utils/mailer';
 import { checkAndNotifyQueue } from './queues';
+import { invalidateCache } from '../utils/cache';
 
 const registrations = new Hono();
 
@@ -12,7 +13,7 @@ registrations.get('/', requireAuth, async (c) => {
   const session = c.get('session');
 
   const result = await executeQuery(`
-    SELECT r.*, a.Title, a.StartDate, a.EndDate, a.Location, a.HoursAwarded
+    SELECT r.*, a.Title, a.StartDate, a.EndDate, a.Location, a.LocationLat, a.LocationLng, a.HoursAwarded
     FROM registrations r
     JOIN activities a ON r.ActivityID = a.ActivityID
     WHERE r.UserID = ?
@@ -20,6 +21,40 @@ registrations.get('/', requireAuth, async (c) => {
   `, [session.user.id], c.env);
 
   return c.json(result);
+});
+
+
+
+// GET /api/registrations/:id/certificate — ดูเกียรติบัตรของตัวเอง
+registrations.get('/:id/certificate', requireAuth, async (c) => {
+  const session = c.get('session');
+  const id = c.req.param('id');
+
+  const rows = await executeQuery(`
+    SELECT r.CertificateUrl, r.UserID, a.OrganizerID
+    FROM registrations r
+    JOIN activities a ON r.ActivityID = a.ActivityID
+    WHERE r.RegistrationID = ? LIMIT 1
+  `, [id], c.env);
+  const registration = rows[0];
+
+  if (!registration) return c.json({ error: 'ไม่พบการลงทะเบียนนี้' }, 404);
+
+  const allowed = registration.UserID === session.user.id
+    || session.user.role === 'admin'
+    || (session.user.role === 'organizer' && registration.OrganizerID === session.user.id);
+  if (!allowed) return c.json({ error: 'ไม่มีสิทธิ์เข้าถึงเกียรติบัตรนี้' }, 403);
+  if (!registration.CertificateUrl) return c.json({ error: 'ยังไม่มีเกียรติบัตรสำหรับรายการนี้' }, 404);
+  if (!c.env.PHOTOS_BUCKET) return c.json({ error: 'ระบบยังไม่ได้ตั้งค่าที่เก็บรูปภาพ' }, 500);
+
+  const object = await c.env.PHOTOS_BUCKET.get(registration.CertificateUrl);
+  if (!object) return c.json({ error: 'ไม่พบไฟล์เกียรติบัตร' }, 404);
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('etag', object.httpEtag);
+  headers.set('Cache-Control', 'private, max-age=3600');
+  return new Response(object.body, { headers });
 });
 
 // POST /api/registrations — สมัครเข้าร่วมกิจกรรม
@@ -72,17 +107,29 @@ registrations.post('/', requireAuth, async (c) => {
       }
     }
 
-    // Insert registration
+    // Insert registration with auto-approved status
     const insertResult = await executeQuery(
-      `INSERT INTO registrations (UserID, ActivityID, Status, Note) VALUES (?, ?, 'pending', ?)`,
+      `INSERT INTO registrations (UserID, ActivityID, Status, Note) VALUES (?, ?, 'approved', ?)`,
       [session.user.id, activityId, note || null],
       c.env
     );
 
+    // Create notification for auto-approval
+    await executeQuery(
+      'INSERT INTO notifications (UserID, RegistrationID, Message) VALUES (?, ?, ?)',
+      [
+        session.user.id,
+        insertResult.insertId,
+        `การสมัครเข้าร่วมกิจกรรม "${activity.Title}" ได้รับการอนุมัติเรียบร้อยแล้ว (อนุมัติอัตโนมัติ)`
+      ],
+      c.env
+    ).catch(err => console.error('Notification insert error:', err));
+
     logAudit('registration_created', session.user.id, {
       activityId,
       activityTitle: activity.Title,
-      registrationId: insertResult.insertId
+      registrationId: insertResult.insertId,
+      status: 'approved'
     });
 
     // Notify admin
@@ -96,7 +143,10 @@ registrations.post('/', requireAuth, async (c) => {
       logError('Failed to send registration notification email', emailError, { registrationId: insertResult.insertId });
     }
 
-    return c.json({ success: true, registrationId: insertResult.insertId });
+    // Invalidate activities list cache to update registered_count immediately
+    await invalidateCache('activities', c.env);
+
+    return c.json({ success: true, registrationId: insertResult.insertId, status: 'approved' });
   } catch (error) {
     logError('Registration transaction error', error, { activityId, userId: session.user.id });
     return c.json({ error: 'เกิดข้อผิดพลาดในการลงทะเบียน กรุณาลองใหม่' }, 500);
@@ -131,6 +181,9 @@ registrations.patch('/:id/cancel', requireAuth, async (c) => {
 
   // แจ้งคนที่รอคิวถัดไปสำหรับกิจกรรมนี้
   await checkAndNotifyQueue(registration.ActivityID, c.env);
+
+  // Invalidate activities list cache
+  await invalidateCache('activities', c.env);
 
   return c.json({ success: true });
 });

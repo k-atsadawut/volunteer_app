@@ -42,7 +42,7 @@ passwordReset.post('/', async (c) => {
     );
 
     const requestUrl = new URL(c.req.url);
-    const resetLink = `${requestUrl.protocol}//${requestUrl.host}/forgot-password.html?resetToken=${resetToken}`;
+    const resetLink = `${requestUrl.protocol}//${requestUrl.host}/forgot-password?resetToken=${resetToken}`;
 
     await sendEmail({
       to: email,

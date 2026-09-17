@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import { executeQuery } from '../config/db';
-import { createSession, getSession } from '../middleware/session';
+import { createSession, getSession, destroySession } from '../middleware/session';
+import { requireAuth } from '../middleware/auth';
 import { logAudit, logError, logWarn } from '../utils/logger';
-import { hashPassword, verifyPassword } from '../utils/password';
+import { hashPassword, verifyPassword, isLegacyHash } from '../utils/password';
 import { evaluateLoginAttempt, DEFAULT_MAX_ATTEMPTS, DEFAULT_LOCK_MINUTES } from '../utils/authLock';
 import { logSecurityEvent } from '../utils/securityLog';
 
@@ -28,14 +29,21 @@ auth.post('/login', async (c) => {
 
   const user = users[0];
 
+  const logEvent = (evt) => {
+    const promise = logSecurityEvent(evt, c.env).catch(err => console.error('logSecurityEvent error:', err));
+    if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+      c.executionCtx.waitUntil(promise);
+    }
+  };
+
   if (!user) {
-    await logSecurityEvent({
+    logEvent({
       email,
       eventType: 'login_failed',
       ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
       userAgent: c.req.header('user-agent'),
       details: 'email not found',
-    }, c.env);
+    });
     return c.json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' }, 401);
   }
 
@@ -51,11 +59,14 @@ auth.post('/login', async (c) => {
 
   // ── เขียน DB state ตามผล ──
   if (result.action === 'allow' && result.shouldResetCount) {
-    await executeQuery(
+    const updatePromise = executeQuery(
       'UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE UserID = ?',
       [user.UserID],
       c.env
-    );
+    ).catch(err => console.error('Reset counter error:', err));
+    if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+      c.executionCtx.waitUntil(updatePromise);
+    }
   } else if (result.action === 'lock' && result.shouldResetCount) {
     await executeQuery(
       'UPDATE users SET failed_login_count = 0, locked_until = ? WHERE UserID = ?',
@@ -73,7 +84,7 @@ auth.post('/login', async (c) => {
 
   // ── response ──
   if (result.action === 'lock') {
-    await logSecurityEvent({
+    logEvent({
       userId: user.UserID,
       email: user.Email,
       eventType: 'account_locked',
@@ -81,11 +92,11 @@ auth.post('/login', async (c) => {
       userAgent: c.req.header('user-agent'),
       failedAttempt: maxAttempts,
       details: result.errorMessage,
-    }, c.env);
+    });
     return c.json({ error: result.errorMessage, isLocked: true }, 403);
   }
   if (result.action === 'reject') {
-    await logSecurityEvent({
+    logEvent({
       userId: user.UserID,
       email: user.Email,
       eventType: 'login_failed',
@@ -93,19 +104,35 @@ auth.post('/login', async (c) => {
       userAgent: c.req.header('user-agent'),
       failedAttempt: result.attempts,
       details: result.errorMessage,
-    }, c.env);
+    });
     return c.json({ error: result.errorMessage }, 401);
   }
 
   // action === 'allow'
-  await logSecurityEvent({
+  logEvent({
     userId: user.UserID,
     email: user.Email,
     eventType: 'login_success',
     ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
     userAgent: c.req.header('user-agent'),
     details: result.shouldResetCount ? 'success (counter reset)' : 'success',
-  }, c.env);
+  });
+
+  if (isLegacyHash(user.Password)) {
+    const rehashPromise = (async () => {
+      const newHash = await hashPassword(password);
+      await executeQuery(
+        'UPDATE users SET Password = ? WHERE UserID = ?',
+        [newHash, user.UserID],
+        c.env
+      );
+      console.log('[Auth] Auto-rehashed password for user', user.UserID);
+    })().catch(err => console.error('[Auth] Failed to auto-rehash password:', err));
+
+    if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+      c.executionCtx.waitUntil(rehashPromise);
+    }
+  }
 
   const userData = {
     id: user.UserID,
@@ -118,10 +145,71 @@ auth.post('/login', async (c) => {
 
   const sessionId = await createSession(userData, c.env);
 
-  c.header('Set-Cookie', `session=${sessionId}; HttpOnly; SameSite=Lax; Max-Age=${21600}; Path=/`);
+  const isProduction = !!c.env?.ALLOWED_ORIGINS;
+  const cookieFlags = isProduction ? 'HttpOnly; Secure; SameSite=Lax' : 'HttpOnly; SameSite=Lax';
+  c.header('Set-Cookie', `session=${sessionId}; ${cookieFlags}; Max-Age=${21600}; Path=/`);
 
   return c.json({
     success: true,
+    user: userData,
+  });
+});
+
+// POST /api/auth/register — สมัครสมาชิกสำหรับ Student / Organizer
+auth.post('/register', async (c) => {
+  const { name, email, password, confirmPassword, role, faculty, department } = await c.req.json();
+
+  if (!name || !email || !password) {
+    return c.json({ error: 'กรุณากรอกข้อมูลที่จำเป็น (ชื่อ, อีเมล, รหัสผ่าน) ให้ครบถ้วน' }, 400);
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (password.length < 6) {
+    return c.json({ error: 'รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร' }, 400);
+  }
+
+  if (confirmPassword && password !== confirmPassword) {
+    return c.json({ error: 'รหัสผ่านและยืนยันรหัสผ่านไม่ตรงกัน' }, 400);
+  }
+
+  // อนุญาตเฉพาะบทบาท student และ organizer ผ่านหน้าสมัครสมาชิก
+  const userRole = ['student', 'organizer'].includes(role) ? role : 'student';
+
+  const existing = await executeQuery('SELECT UserID FROM users WHERE Email = ? LIMIT 1', [cleanEmail], c.env);
+  if (existing.length > 0) {
+    return c.json({ error: 'อีเมลนี้ถูกใช้งานในระบบแล้ว' }, 400);
+  }
+
+  const hashedPassword = await hashPassword(password);
+
+  const result = await executeQuery(
+    `INSERT INTO users (Name, Email, Password, Role, Faculty, Department, force_change_password)
+     VALUES (?, ?, ?, ?, ?, ?, 0)`,
+    [name.trim(), cleanEmail, hashedPassword, userRole, faculty ? faculty.trim() : null, department ? department.trim() : null],
+    c.env
+  );
+
+  const userId = result.insertId;
+
+  const userData = {
+    id: userId,
+    name: name.trim(),
+    email: cleanEmail,
+    role: userRole,
+    totalHours: 0,
+    forceChangePassword: false,
+  };
+
+  const sessionId = await createSession(userData, c.env);
+
+  const isProduction = !!c.env?.ALLOWED_ORIGINS;
+  const cookieFlags = isProduction ? 'HttpOnly; Secure; SameSite=Lax' : 'HttpOnly; SameSite=Lax';
+  c.header('Set-Cookie', `session=${sessionId}; ${cookieFlags}; Max-Age=${21600}; Path=/`);
+
+  return c.json({
+    success: true,
+    message: 'สมัครสมาชิกสำเร็จ',
     user: userData,
   });
 });
@@ -131,7 +219,9 @@ auth.post('/logout', async (c) => {
   const sessionId = c.get('sessionId');
   await destroySession(sessionId, c.env);
   
-  c.header('Set-Cookie', 'session=; HttpOnly; SameSite=Lax; Max-Age=0; Path=/');
+  const isProduction = !!c.env?.ALLOWED_ORIGINS;
+  const cookieFlags = isProduction ? 'HttpOnly; Secure; SameSite=Lax' : 'HttpOnly; SameSite=Lax';
+  c.header('Set-Cookie', `session=; ${cookieFlags}; Max-Age=0; Path=/`);
   return c.json({ success: true });
 });
 

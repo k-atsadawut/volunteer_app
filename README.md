@@ -111,3 +111,28 @@ wrangler deploy
 ## เอกสารเพิ่มเติม
 
 ดู [README-CLOUDFLARE.md](README-CLOUDFLARE.md) สำหรับคำแนะนำการ deploy โดยละเอียด
+
+## ฟีเจอร์ที่เพิ่มใน 2026-09-16
+
+### 1) ปักหมุด GPS สถานที่กิจกรรม
+- ผู้จัดกิจกรรมสามารถกด **📍 ใช้ตำแหน่งปัจจุบัน** ตอนสร้าง/แก้ไขกิจกรรม
+- ระบบบันทึก `LocationLat` และ `LocationLng` ลงใน `activities`
+- สามารถกรอก Latitude/Longitude เองได้ และมีลิงก์เปิดจุดบน OpenStreetMap
+- พิกัดนี้สามารถนำไปใช้ตรวจระยะ GPS ของรูปยืนยันการเข้าร่วมได้
+
+### 2) ผู้จัดเพิ่มรูปเกียรติบัตรหลังเช็คชื่อ
+- ผู้จัดจะเห็นปุ่ม **เพิ่มเกียรติบัตร** เมื่อผู้สมัครมีสถานะ `attended` แล้ว
+- รองรับ JPG / PNG / WebP ขนาดไม่เกิน 10MB
+- ไฟล์เก็บใน R2 และบันทึก key ใน `registrations.CertificateUrl`
+- ผู้เข้าร่วมสามารถกด **ดูเกียรติบัตร** จากรายการกิจกรรมของตัวเอง
+
+### Database Migration
+สำหรับฐานข้อมูลเดิม ให้รันครั้งเดียว:
+
+```sql
+-- database/migrations/2026-09-16-activity-gps-certificates.sql
+ALTER TABLE registrations
+  ADD COLUMN CertificateUrl VARCHAR(500) NULL AFTER reminder_sent;
+```
+
+> `LocationLat` และ `LocationLng` มีอยู่แล้วในตาราง `activities` จึงไม่ต้องเพิ่ม column GPS ใหม่

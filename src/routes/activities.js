@@ -1,42 +1,47 @@
 import { Hono } from 'hono';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { executeQuery } from '../config/db';
+import { getCached, setCached, getCacheVersion, invalidateCache, CACHE_TTL } from '../utils/cache';
 
 const activities = new Hono();
 
-// GET /api/activities — ดูรายการกิจกรรมทั้งหมด (filter ได้ตาม category / status / คำค้นหา)
-activities.get('/', requireAuth, async (c) => {
-  const { category, status, q, page = '1', limit = '20' } = c.req.query();
+// GET /api/activities — ดูรายการกิจกรรมทั้งหมด (filter ได้ตาม category / status / คำค้นหา / organizerId)
+activities.get('/', async (c) => {
+  const { category, status, q, page = '1', limit = '100', organizerId } = c.req.query();
   const pageNum = parseInt(page, 10) || 1;
-  const limitNum = Math.min(parseInt(limit, 10) || 20, 100); // Max 100 per page
+  const limitNum = Math.min(parseInt(limit, 10) || 100, 200); // Max 200 per page
   const offset = (pageNum - 1) * limitNum;
 
+  // Optimized query with subquery for counting
   let query = `
     SELECT
       a.*,
-      COALESCE((
-        SELECT COUNT(*) FROM registrations r
-        WHERE r.ActivityID = a.ActivityID AND r.Status IN ('pending','approved','attended')
-      ), 0) AS registered_count
+      COALESCE(reg_count, 0) AS registered_count
     FROM activities a
-  `;
-
-  let countQuery = `
-    SELECT COUNT(*) AS total FROM activities a
+    LEFT JOIN (
+      SELECT ActivityID, COUNT(*) AS reg_count
+      FROM registrations
+      WHERE Status IN ('pending','approved','attended')
+      GROUP BY ActivityID
+    ) r ON a.ActivityID = r.ActivityID
   `;
 
   const params = [];
   const conditions = [];
 
+  if (organizerId) {
+    conditions.push('a.OrganizerID = ?');
+    params.push(organizerId);
+  }
   if (category) {
     conditions.push('a.Category = ?');
     params.push(category);
   }
-  if (status) {
+  if (status && status !== 'all') {
     conditions.push('a.Status = ?');
     params.push(status);
-  } else {
-    // ค่าเริ่มต้น: ไม่แสดงกิจกรรมที่เป็น draft ให้ผู้ใช้ทั่วไป
+  } else if (!status && !organizerId) {
+    // ค่าเริ่มต้น: ไม่แสดงกิจกรรมที่เป็น draft ให้ผู้ใช้ทั่วไป (ยกเว้นเมื่อค้นหาตาม organizerId หรือ status=all)
     conditions.push("a.Status != 'draft'");
   }
   if (q) {
@@ -46,21 +51,24 @@ activities.get('/', requireAuth, async (c) => {
 
   if (conditions.length > 0) {
     query += ' WHERE ' + conditions.join(' AND ');
-    countQuery += ' WHERE ' + conditions.join(' AND ');
   }
 
-  // Get total count for pagination
-  const countResult = await executeQuery(countQuery, params, c.env);
-  const total = countResult[0].total;
-  const totalPages = Math.ceil(total / limitNum);
-
-  query += ' ORDER BY a.StartDate ASC';
+  query += ' ORDER BY a.ActivityID DESC';
   query += ' LIMIT ? OFFSET ?';
   params.push(limitNum, offset);
 
   const result = await executeQuery(query, params, c.env);
 
-  return c.json({
+  // Get total count using separate query
+  let countQuery = `SELECT COUNT(*) AS total FROM activities a`;
+  if (conditions.length > 0) {
+    countQuery += ' WHERE ' + conditions.join(' AND ');
+  }
+  const countResult = await executeQuery(countQuery, params.slice(0, -2), c.env);
+  const total = countResult[0]?.total || 0;
+  const totalPages = Math.ceil(total / limitNum) || 1;
+
+  const response = {
     data: result,
     pagination: {
       page: pageNum,
@@ -70,11 +78,14 @@ activities.get('/', requireAuth, async (c) => {
       hasNext: pageNum < totalPages,
       hasPrev: pageNum > 1
     }
-  });
+  };
+
+  c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+  return c.json(response);
 });
 
 // GET /api/activities/:id — รายละเอียดกิจกรรมเดียว
-activities.get('/:id', requireAuth, async (c) => {
+activities.get('/:id', async (c) => {
   const id = c.req.param('id');
 
   const rows = await executeQuery(
@@ -88,6 +99,7 @@ activities.get('/:id', requireAuth, async (c) => {
   );
 
   if (!rows[0]) return c.json({ error: 'ไม่พบกิจกรรมนี้' }, 404);
+  c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
   return c.json(rows[0]);
 });
 
@@ -118,19 +130,21 @@ activities.post('/', requireAuth, async (c) => {
        StartDate, EndDate, StartTime, EndTime, MaxParticipants, HoursAwarded, Status, CoverImageUrl)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      Title, Description || null, Category || 'other', session.user.id, OrganizerName || null,
+      Title, Description || null, Category || 'other', session.user.id, OrganizerName || session.user.name || null,
       Location || null, LocationLat || null, LocationLng || null,
       StartDate, EndDate, StartTime || null, EndTime || null,
-      MaxParticipants || null, HoursAwarded || 0, Status || 'draft', CoverImageUrl || null,
+      MaxParticipants || null, HoursAwarded || 0, Status || 'open', CoverImageUrl || null,
     ],
     c.env
   );
 
-  return c.json({ success: true, activityId: result.insertId });
+  await invalidateCache('activities', c.env);
+
+  return c.json({ success: true, activityId: result.insertId, message: 'สร้างกิจกรรมสำเร็จ' });
 });
 
-// PATCH /api/activities/:id — แก้ไขกิจกรรม (admin หรือ organizer เจ้าของกิจกรรม)
-activities.patch('/:id', requireAuth, async (c) => {
+// Update activity handler (used for both PATCH and PUT)
+const handleUpdateActivity = async (c) => {
   const session = c.get('session');
   const id = c.req.param('id');
 
@@ -164,14 +178,31 @@ activities.patch('/:id', requireAuth, async (c) => {
   values.push(id);
   await executeQuery(`UPDATE activities SET ${updates.join(', ')} WHERE ActivityID = ?`, values, c.env);
 
-  return c.json({ success: true });
-});
+  await invalidateCache('activities', c.env);
 
-// DELETE /api/activities/:id — ลบกิจกรรม (admin only)
-activities.delete('/:id', requireAdmin, async (c) => {
+  return c.json({ success: true, message: 'บันทึกการแก้ไขเรียบร้อยแล้ว' });
+};
+
+// PATCH & PUT /api/activities/:id — แก้ไขกิจกรรม
+activities.patch('/:id', requireAuth, handleUpdateActivity);
+activities.put('/:id', requireAuth, handleUpdateActivity);
+
+// DELETE /api/activities/:id — ลบกิจกรรม (admin หรือ organizer เจ้าของกิจกรรม)
+activities.delete('/:id', requireAuth, async (c) => {
+  const session = c.get('session');
   const id = c.req.param('id');
+
+  const existing = await executeQuery('SELECT OrganizerID FROM activities WHERE ActivityID = ? LIMIT 1', [id], c.env);
+  if (!existing[0]) return c.json({ error: 'ไม่พบกิจกรรมนี้' }, 404);
+
+  const isOwner = existing[0].OrganizerID === session.user.id;
+  if (session.user.role !== 'admin' && !isOwner) {
+    return c.json({ error: 'ไม่มีสิทธิ์ลบกิจกรรมนี้' }, 403);
+  }
+
   await executeQuery('DELETE FROM activities WHERE ActivityID = ?', [id], c.env);
-  return c.json({ success: true });
+  await invalidateCache('activities', c.env);
+  return c.json({ success: true, message: 'ลบกิจกรรมเรียบร้อยแล้ว' });
 });
 
 export default activities;

@@ -1,89 +1,148 @@
 -- ============================================================
 -- ข้อมูลทดสอบ / Test Data for Volunteer Activity Hub
+-- รหัสผ่านทั้งหมด: password123
+-- Hash: SHA-256 (จะถูก auto-rehash เป็น PBKDF2 เมื่อ login ครั้งแรก)
 -- ============================================================
 
 -- ------------------------------------------------------------
--- Users (รหัสผ่านทั้งหมดคือ "password123" - bcrypt hash)
+-- Users (เพิ่มผู้ใช้ให้หลากหลายขึ้น)
+-- SHA-256 hash of "password123" = ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f
 -- ------------------------------------------------------------
-INSERT INTO users (Name, Email, Password, Role, Faculty, Department, force_change_password) VALUES
-('Admin User', 'admin@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'admin', 'IT', 'Computer Science', 0),
-('Organizer Somchai', 'organizer1@ngo.org', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'organizer', NULL, NULL, 0),
-('Organizer Suda', 'organizer2@ngo.org', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'organizer', NULL, NULL, 0),
-('Student Nop', 'student1@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'Engineering', 'Computer Engineering', 1),
-('Student Mali', 'student2@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'Business', 'Accounting', 1),
-('Student Som', 'student3@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'Arts', 'Design', 1),
-('Student Dang', 'student4@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'Science', 'Physics', 1),
-('Student Nam', 'student5@university.ac.th', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYzq5q5q5q5', 'student', 'IT', 'Information Technology', 1);
+INSERT INTO users (Name, Email, Password, Role, Faculty, Department, force_change_password, total_hours) VALUES
+('Admin User', 'admin@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'admin', 'IT', 'Computer Science', 0, 0),
+('Organizer Somchai', 'organizer1@ngo.org', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'organizer', NULL, NULL, 0, 0),
+('Organizer Suda', 'organizer2@ngo.org', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'organizer', NULL, NULL, 0, 0),
+('Organizer Chai', 'organizer3@charity.org', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'organizer', NULL, NULL, 0, 0),
+('Student Nop', 'student1@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Engineering', 'Computer Engineering', 1, 24.0),
+('Student Mali', 'student2@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Business', 'Accounting', 1, 4.0),
+('Student Som', 'student3@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Arts', 'Design', 1, 0),
+('Student Dang', 'student4@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Science', 'Physics', 1, 0),
+('Student Nam', 'student5@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'IT', 'Information Technology', 1, 0),
+('Student Fon', 'student6@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Medicine', 'Nursing', 1, 6.5),
+('Student Boy', 'student7@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Engineering', 'Mechanical', 1, 0),
+('Student Nok', 'student8@university.ac.th', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'student', 'Education', 'English', 1, 0);
 
 -- ------------------------------------------------------------
--- Activities (กิจกรรมจิตอาสา)
+-- Activities (เพิ่มกิจกรรมหลากหลายหมวดหมู่และสถานะ)
 -- ------------------------------------------------------------
 INSERT INTO activities (Title, Description, Category, OrganizerID, OrganizerName, Location, LocationLat, LocationLng, StartDate, EndDate, StartTime, EndTime, MaxParticipants, HoursAwarded, Status) VALUES
-('ทำความสะอาดชายหาดบางแสน', 'ร่วมกันเก็บขยะและทำความสะอาดชายหาดเพื่อสิ่งแวดล้อม', 'environment', 2, 'Organizer Somchai', 'ชายหาดบางแสน', 13.2847, 100.5725, '2026-09-20', '2026-09-20', '08:00:00', '12:00:00', 30, 4.0, 'open'),
-('สอนเด็กยากจนคอมพิวเตอร์พื้นฐาน', 'สอนการใช้คอมพิวเตอร์และอินเทอร์เน็ตเบื้องต้นให้เด็กในชุมชน', 'education', 2, 'Organizer Somchai', 'ศูนย์เรียนรู้ชุมชน', 13.7368, 100.5231, '2026-09-25', '2026-09-25', '09:00:00', '16:00:00', 15, 8.0, 'open'),
-('ตรวจสุขภาพฟรีชุมชน', 'ตรวจสุขภาพและให้คำปรึกษาด้านสุขภาพแก่ผู้สูงอายุ', 'health', 3, 'Organizer Suda', 'วัดใจกลาง', 13.7563, 100.5018, '2026-10-01', '2026-10-01', '08:30:00', '15:00:00', 50, 6.5, 'open'),
-('เตรียมอาหารกลางวันให้ผู้ยากไร้', 'ปรุงอาหารและแจกจ่ายให้ผู้ยากไร้ในชุมชน', 'community', 3, 'Organizer Suda', 'มูลนิธิช่วยคนยากไร้', 13.7432, 100.4889, '2026-10-05', '2026-10-05', '07:00:00', '13:00:00', 20, 6.0, 'draft'),
-('ช่วยเหลือผู้ประสบภัยน้ำท่วม', 'ส่งของและช่วยเหลือผู้ประสบภัยน้ำท่วมในพื้นที่', 'disaster_relief', 2, 'Organizer Somchai', 'จังหวัดอยุธยา', 14.3694, 100.5879, '2026-09-15', '2026-09-17', '08:00:00', '18:00:00', 100, 24.0, 'ongoing');
+-- Environment Activities
+('ทำความสะอาดชายหาดบางแสน', 'ร่วมกันเก็บขยะและทำความสะอาดชายหาดเพื่อสิ่งแวดล้อม มีอุปกรณ์และขนมมาเลี้ยง', 'environment', 2, 'Organizer Somchai', 'ชายหาดบางแสน', 13.2847, 100.5725, '2026-09-20', '2026-09-20', '08:00:00', '12:00:00', 30, 4.0, 'open'),
+('ปลูกป่าชายเลนเพื่ออนุรักษ์ชายฝั่ง', 'ร่วมกันปลูกต้นไม้ชายเลนเพื่อช่วยป้องกันการกัดเซาะชายฝั่ง มีอาหารเช้าและอุปกรณ์ให้', 'environment', 2, 'Organizer Somchai', 'สวนเฉลิมพระเกียรติ', 13.7563, 100.5018, '2026-10-10', '2026-10-10', '07:00:00', '13:00:00', 50, 6.0, 'open'),
+('รีไซเคิลขยะอิเล็กทรอนิกส์', 'รับบริจาคอุปกรณ์อิเล็กทรอนิกส์เก่าและแยกประเภทให้ถูกต้องตามมาตรฐาน', 'environment', 4, 'Organizer Chai', 'ห้างสรรพสินค้าเซ็นทรัลพลาซา', 13.7230, 100.5230, '2026-10-15', '2026-10-15', '09:00:00', '17:00:00', 20, 8.0, 'draft'),
+
+-- Education Activities
+('สอนเด็กยากจนคอมพิวเตอร์พื้นฐาน', 'สอนการใช้คอมพิวเตอร์และอินเทอร์เน็ตเบื้องต้นให้เด็กในชุมชน ทั้ง Word, Excel และ Internet', 'education', 2, 'Organizer Somchai', 'ศูนย์เรียนรู้ชุมชน', 13.7368, 100.5231, '2026-09-25', '2026-09-25', '09:00:00', '16:00:00', 15, 8.0, 'open'),
+('สอนภาษาอังกฤษฟรีเด็กชนบท', 'สอนภาษาอังกฤษเบื้องต้นให้เด็กๆ ในชนบท ทั้งการพูด อ่าน เขียน', 'education', 3, 'Organizer Suda', 'โรงเรียนบ้านหนองไผ่', 13.7200, 100.4900, '2026-10-08', '2026-10-08', '10:00:00', '15:00:00', 25, 5.0, 'open'),
+('Workshop ทำหนังสือเด็ก', 'สอนวิธีทำหนังสือเด็กโดยใช้วัสดุรีไซเคิล เพื่อแจกจ่ายให้เด็กยากจน', 'education', 4, 'Organizer Chai', 'ห้องสมุดกลาง', 13.7450, 100.5100, '2026-10-20', '2026-10-20', '13:00:00', '18:00:00', 10, 5.0, 'draft'),
+
+-- Health Activities
+('ตรวจสุขภาพฟรีชุมชน', 'ตรวจสุขภาพและให้คำปรึกษาด้านสุขภาพแก่ผู้สูงอายุ มีแพทย์และพยาบาลจากโรงพยาบาล', 'health', 3, 'Organizer Suda', 'วัดใจกลาง', 13.7563, 100.5018, '2026-10-01', '2026-10-01', '08:30:00', '15:00:00', 50, 6.5, 'open'),
+('ค่ายสุขภาพเด็กโต', 'กิจกรรมส่งเสริมสุขภาพเด็กโต ทั้งการออกกำลังกาย โภชนาการ และสุขภาพจิต', 'health', 3, 'Organizer Suda', 'สนามกีฬาจังหวัด', 13.7400, 100.5000, '2026-10-12', '2026-10-13', '08:00:00', '17:00:00', 100, 15.0, 'open'),
+('ตรวจโรคตาฟรี', 'ตรวจสุขภาพตาและแจกแว่นให้ผู้สูงอายุและผู้ยากไร้', 'health', 4, 'Organizer Chai', 'ศูนย์สุขภาพอำเภอ', 13.7300, 100.5200, '2026-10-25', '2026-10-25', '09:00:00', '16:00:00', 40, 7.0, 'closed'),
+
+-- Community Activities
+('เตรียมอาหารกลางวันให้ผู้ยากไร้', 'ปรุงอาหารและแจกจ่ายให้ผู้ยากไร้ในชุมชน มีวัตถุดิบครบ', 'community', 3, 'Organizer Suda', 'มูลนิธิช่วยคนยากไร้', 13.7432, 100.4889, '2026-10-05', '2026-10-05', '07:00:00', '13:00:00', 20, 6.0, 'open'),
+('ซ่อมบ้านให้ผู้สูงอายุ', 'ช่วยซ่อมแซมบ้านและทำความสะอาดให้ผู้สูงอายุที่อาศัยอยู่เพียงลำพัง', 'community', 2, 'Organizer Somchai', 'ชุมชนบ้านคลอง', 13.7500, 100.4900, '2026-10-18', '2026-10-18', '08:00:00', '17:00:00', 15, 10.0, 'open'),
+('จัดตลาดนัดชุมชน', 'จัดตลาดนัดขายของราคาถูกและของมือสอง เพื่อหารายได้เข้ากองทุนชุมชน', 'community', 4, 'Organizer Chai', 'สวนสาธารณะเทศบาล', 13.7250, 100.5150, '2026-10-22', '2026-10-22', '09:00:00', '16:00:00', 30, 7.0, 'draft'),
+
+-- Disaster Relief Activities
+('ช่วยเหลือผู้ประสบภัยน้ำท่วม', 'ส่งของและช่วยเหลือผู้ประสบภัยน้ำท่วมในพื้นที่ ต้องการเสื้อผ้า อาหาร และยา', 'disaster_relief', 2, 'Organizer Somchai', 'จังหวัดอยุธยา', 14.3694, 100.5879, '2026-09-15', '2026-09-17', '08:00:00', '18:00:00', 100, 24.0, 'ongoing'),
+('บรรจุสิ่งของบริจาคภัยแล้ง', 'บรรจุสิ่งของบริจาคสำหรับผู้ประสบภัยแล้งภูเขาไฟ ต้องการเสื้อหนา ผ้าห่ม และอาหารกระป๋อง', 'disaster_relief', 4, 'Organizer Chai', 'ศูนย์อาสาสมัครกาญจนบุรี', 14.7000, 101.1000, '2026-09-18', '2026-09-18', '09:00:00', '17:00:00', 50, 8.0, 'completed'),
+
+-- Animal Welfare Activities
+('เก็บและดูแลสุนัขจรจัด', 'เก็บสุนัขจรจัดและนำไปรักษา หาบ้านให้ และฉีดวัคซีน', 'animal_welfare', 2, 'Organizer Somchai', 'มูลนิธิสุนัขและแมว', 13.7200, 100.5300, '2026-10-06', '2026-10-06', '08:00:00', '17:00:00', 20, 10.0, 'open'),
+('สร้างบ้านให้แมวในชุมชน', 'สร้างบ้านเล็กๆ ให้แมวในชุมชน ทั้งการออกแบบ ตัดไม้ และประกอบ', 'animal_welfare', 4, 'Organizer Chai', 'สวนสาธารณะหน้ามหาวิทยาลัย', 13.7350, 100.5200, '2026-10-28', '2026-10-28', '09:00:00', '16:00:00', 15, 7.0, 'draft'),
+
+-- Other Activities
+('อบรมการทำสวนครัวเคมี', 'สอนวิธีทำสวนครัวเคมีเพื่อเพิ่มรายได้ให้ครอบครัว', 'other', 3, 'Organizer Suda', 'ศูนย์ศึกษาการเกษตร', 13.7100, 100.4950, '2026-10-16', '2026-10-16', '08:30:00', '15:30:00', 25, 7.0, 'open'),
+('สัมมนาการเริ่มต้นธุรกิจ', 'สัมมนาให้ความรู้เรื่องการเริ่มต้นธุรกิจเล็กๆ สำหรับเยาวชน', 'other', 4, 'Organizer Chai', 'ห้องประชุมธนาคารไทย', 13.7400, 100.5250, '2026-10-30', '2026-10-30', '13:00:00', '18:00:00', 40, 5.0, 'draft');
 
 -- ------------------------------------------------------------
--- Registrations (การลงทะเบียนเข้าร่วมกิจกรรม)
+-- Registrations (เพิ่มการลงทะเบียนหลากหลายสถานะ)
 -- ------------------------------------------------------------
--- การลงทะเบียนที่อนุมัติแล้ว
-INSERT INTO registrations (UserID, ActivityID, Status) VALUES
-(4, 1, 'approved'),
-(5, 1, 'approved'),
-(4, 2, 'approved');
-
--- การลงทะเบียนที่รออนุมัติ
-INSERT INTO registrations (UserID, ActivityID, Status) VALUES
-(6, 1, 'pending'),
-(7, 2, 'pending'),
-(8, 3, 'pending');
-
--- การลงทะเบียนที่ถูกปฏิเสธ
-INSERT INTO registrations (UserID, ActivityID, Status) VALUES
-(5, 3, 'rejected');
-
--- การลงทะเบียนที่ถูกยกเลิก
-INSERT INTO registrations (UserID, ActivityID, Status) VALUES
-(6, 2, 'cancelled');
-
--- การลงทะเบียนที่เข้าร่วมแล้ว
-INSERT INTO registrations (UserID, ActivityID, Status) VALUES
-(4, 5, 'attended');
+INSERT INTO registrations (UserID, ActivityID, Status, Note) VALUES
+-- Activity 1: Beach Cleanup
+(4, 1, 'approved', 'มีประสบการณ์ทำความสะอาดชายหาดมาแล้ว'),
+(5, 1, 'approved', NULL),
+(6, 1, 'approved', NULL),
+(7, 1, 'pending', 'ขอเข้าร่วมด้วยครับ'),
+(8, 1, 'pending', NULL),
+(4, 2, 'approved', 'สามารถสอนคอมพิวเตอร์พื้นฐานได้'),
+(4, 3, 'approved', NULL),
+(5, 3, 'rejected', 'ไม่มีประสบการณ์ด้านสุขภาพ'),
+(6, 2, 'cancelled', 'ติดเรียน'),
+(7, 2, 'approved', NULL),
+(8, 3, 'pending', NULL),
+(9, 1, 'pending', NULL),
+(10, 2, 'approved', NULL),
+(11, 4, 'pending', NULL),
+(12, 5, 'approved', NULL),
+(4, 5, 'attended', 'เข้าร่วมทำความสะอาดชายหาดแล้ว'),
+(5, 5, 'attended', NULL),
+(4, 6, 'approved', NULL),
+(6, 6, 'pending', NULL),
+(7, 7, 'approved', NULL),
+(8, 7, 'attended', NULL),
+(9, 8, 'pending', NULL),
+(10, 9, 'approved', NULL),
+(11, 10, 'no_show', 'ไม่สามารถมาได้เนื่องจากป่วย'),
+(12, 11, 'approved', NULL);
 
 -- ------------------------------------------------------------
--- Queues (คิวรอเข้าร่วมกิจกรรมเมื่อเต็ม)
+-- Queues (เพิ่มคิวรอสำหรับกิจกรรมที่เต็ม)
 -- ------------------------------------------------------------
 INSERT INTO queues (UserID, ActivityID, Status) VALUES
-(7, 1, 'waiting'),
-(8, 2, 'waiting');
+(8, 1, 'waiting'),
+(9, 2, 'waiting'),
+(10, 3, 'waiting'),
+(11, 4, 'waiting'),
+(12, 5, 'waiting'),
+(7, 6, 'waiting'),
+(8, 7, 'waiting'),
+(9, 8, 'waiting');
 
 -- ------------------------------------------------------------
--- Notifications (การแจ้งเตือน)
+-- Notifications (เพิ่มการแจ้งเตือนหลากหลาย)
 -- ------------------------------------------------------------
 INSERT INTO notifications (UserID, RegistrationID, Message, IsRead) VALUES
 (6, 4, 'การลงทะเบียนกิจกรรม "ทำความสะอาดชายหาดบางแสน" ของคุณรอการอนุมัติ', 0),
 (7, 5, 'การลงทะเบียนกิจกรรม "สอนเด็กยากจนคอมพิวเตอร์พื้นฐาน" ของคุณรอการอนุมัติ', 0),
 (5, 7, 'การลงทะเบียนกิจกรรม "ตรวจสุขภาพฟรีชุมชน" ของคุณถูกปฏิเสธ', 1),
-(4, 1, 'การลงทะเบียนกิจกรรม "ทำความสะอาดชายหาดบางแสน" ของคุณได้รับการอนุมัติแล้ว', 1);
+(4, 1, 'การลงทะเบียนกิจกรรม "ทำความสะอาดชายหาดบางแสน" ของคุณได้รับการอนุมัติแล้ว', 1),
+(8, 8, 'การลงทะเบียนกิจกรรม "ตรวจสุขภาพฟรีชุมชน" ของคุณรอการอนุมัติ', 0),
+(9, 10, 'มีที่ว่างในกิจกรรม "สอนเด็กยากจนคอมพิวเตอร์พื้นฐาน" แล้ว กรุณาลงทะเบียนภายใน 24 ชั่วโมง', 0),
+(10, 11, 'ผู้จัดได้เพิ่มเกียรติบัตรสำหรับกิจกรรม "ช่วยเหลือผู้ประสบภัยน้ำท่วม" ให้คุณแล้ว', 0),
+(11, 13, 'การลงทะเบียนกิจกรรม "ตรวจสุขภาพฟรีชุมชน" ของคุณถูกบันทึกว่าไม่เข้าร่วม', 0);
 
 -- ------------------------------------------------------------
--- Photo Verifications (การยืนยันด้วยรูปถ่าย)
+-- Photo Verifications (เพิ่มรูปถ่ายยืนยันหลากหลายสถานะ)
 -- ------------------------------------------------------------
-INSERT INTO photo_verifications (RegistrationID, PhotoUrl, ExifLat, ExifLng, ExifTakenAt, DistanceMeters, Status) VALUES
-(8, 'https://r2.dev/volunteer-activity-photos/verification_001.jpg', 14.3694, 100.5879, '2026-09-15 10:30:00', 15.5, 'verified');
+INSERT INTO photo_verifications (RegistrationID, PhotoUrl, ExifLat, ExifLng, ExifTakenAt, DistanceMeters, Status, RejectReason) VALUES
+(9, 'verifications/flood_relief_001.jpg', 14.3694, 100.5879, '2026-09-15 10:30:00', 15.5, 'verified', NULL),
+(17, 'verifications/health_check_001.jpg', 13.7563, 100.5018, '2026-10-01 09:00:00', 25.0, 'verified', NULL),
+(18, 'verifications/health_check_002.jpg', 13.8000, 100.5500, '2026-10-01 09:15:00', 450.0, 'rejected', 'GPS ไม่ตรงกับสถานที่จัดกิจกรรม'),
+(19, 'verifications/cooking_001.jpg', 13.7432, 100.4889, '2026-10-05 08:30:00', 5.0, 'pending', NULL);
 
 -- ------------------------------------------------------------
--- Hours Log (บันทึกชั่วโมงจิตอาสา)
+-- Hours Log (เพิ่มบันทึกชั่วโมงหลากหลาย)
 -- ------------------------------------------------------------
 INSERT INTO hours_log (UserID, ActivityID, RegistrationID, Hours, GrantedAt, GrantedBy) VALUES
-(4, 5, 8, 24.0, '2026-09-17 18:00:00', 1);
+(4, 5, 9, 24.0, '2026-09-17 18:00:00', 1),
+(5, 5, 10, 24.0, '2026-09-17 18:00:00', 1),
+(8, 7, 18, 6.5, '2026-10-01 16:00:00', 3),
+(10, 9, 21, 6.5, '2026-10-01 16:00:00', 3),
+(4, 13, 23, 15.0, '2026-10-13 18:00:00', 3),
+(6, 13, 24, 15.0, '2026-10-13 18:00:00', 3),
+(5, 14, 20, 10.0, '2026-10-18 18:00:00', 2),
+(7, 15, 16, 8.0, '2026-10-06 18:00:00', 2);
 
 -- ------------------------------------------------------------
--- หมายเหตุ:
--- - รหัสผ่านทั้งหมดคือ "password123" (bcrypt hash)
--- - Admin ไม่ต้องเปลี่ยนรหัสผ่าน (force_change_password = 0)
--- - Students ทั้งหมดต้องเปลี่ยนรหัสผ่านครั้งแรก (force_change_password = 1)
--- - ข้อมูลการลงทะเบียนมีสถานะต่างๆ เพื่อทดสอบ workflow ทั้งหมด
--- ============================================================
+-- Update total_hours for users
+-- ------------------------------------------------------------
+UPDATE users SET total_hours = 24.0 WHERE UserID = 4;
+UPDATE users SET total_hours = 28.0 WHERE UserID = 5;
+UPDATE users SET total_hours = 4.0 WHERE UserID = 6;
+UPDATE users SET total_hours = 6.5 WHERE UserID = 8;
+UPDATE users SET total_hours = 15.0 WHERE UserID = 10;
+UPDATE users SET total_hours = 10.0 WHERE UserID = 7;

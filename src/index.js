@@ -15,6 +15,7 @@ import organizerRegistrationRoutes from './routes/organizer/registrations';
 import notificationRoutes from './routes/notifications';
 import { scheduled } from './scheduled/reminder';
 import { sessionMiddleware } from './middleware/session';
+import { createRateLimit } from './middleware/rateLimit';
 
 const app = new Hono();
 
@@ -25,8 +26,9 @@ app.use('*', cors({
     // Format: comma-separated list, e.g., "https://example.com,https://www.example.com"
     if (c.env?.ALLOWED_ORIGINS) {
       const allowedOrigins = c.env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
-      if (!origin) return false; // Require origin header in production
-      return allowedOrigins.includes(origin);
+      // Same-origin requests may not send Origin header — allow them
+      if (!origin) return allowedOrigins[0];
+      return allowedOrigins.includes(origin) ? origin : false;
     }
     // Development: Allow any origin
     return origin || '*';
@@ -36,6 +38,12 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use('*', sessionMiddleware);
+
+// Rate limiting for sensitive endpoints
+const loginRateLimit = createRateLimit({ maxRequests: 10, windowMs: 60000, keyPrefix: 'rl-login' });
+const forgotPasswordRateLimit = createRateLimit({ maxRequests: 3, windowMs: 60000, keyPrefix: 'rl-forgot' });
+app.use('/api/auth/login', loginRateLimit);
+app.use('/api/forgot-password', forgotPasswordRateLimit);
 
 // API Routes
 app.route('/api/auth', authRoutes);
@@ -52,9 +60,21 @@ app.route('/api/admin/notify', adminNotifyRoutes);
 app.route('/api/organizer/registrations', organizerRegistrationRoutes);
 app.route('/api/notifications', notificationRoutes);
 
-// Fallback - SPA-style redirect
-app.get('*', async (c) => {
-  return c.redirect('/login.html');
+// SPA routing fallback — delegate non-API 404s to Cloudflare Assets
+app.notFound((c) => {
+  if (c.req.path.startsWith('/api')) {
+    return c.json({ error: 'Endpoint not found' }, 404);
+  }
+  if (c.env?.ASSETS) {
+    return c.env.ASSETS.fetch(c.req.raw);
+  }
+  return c.text('Not Found', 404);
+});
+
+// Global error handler — don't leak stack traces to clients
+app.onError((err, c) => {
+  console.error('[Unhandled Error]', err.stack || err.message || err);
+  return c.json({ error: 'เกิดข้อผิดพลาดภายในระบบ' }, 500);
 });
 
 // Cloudflare Workers handler

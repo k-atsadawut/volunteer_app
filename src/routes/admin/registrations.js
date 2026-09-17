@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { requireAdmin, requireAuth } from '../../middleware/auth';
+import { requireAdmin } from '../../middleware/auth';
 import { executeQuery } from '../../config/db';
 import { notifyRegistrationApproved, notifyRegistrationRejected } from '../../utils/mailer';
 
@@ -67,9 +67,10 @@ adminRegistrations.get('/', requireAdmin, async (c) => {
 // PATCH /api/admin/registrations/:id — approve หรือ reject (admin only)
 adminRegistrations.patch('/:id', requireAdmin, async (c) => {
   const id = c.req.param('id');
-  const { action } = await c.req.json();
+  const body = await c.req.json();
+  const action = body.action || body.status;
 
-  if (!['approved', 'rejected'].includes(action)) {
+  if (!action || !['approved', 'rejected', 'attended', 'no_show'].includes(action)) {
     return c.json({ error: 'action ต้องเป็น approved หรือ rejected' }, 400);
   }
 
